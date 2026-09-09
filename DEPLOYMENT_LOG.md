@@ -5,7 +5,48 @@ A running journal so anyone (you, or a fresh Claude session) can resume instantl
 
 ---
 
-## ⏯️ RESUME HERE  (end of session 2)
+## ⏯️ RESUME HERE  (session 3 — DEPLOYING NOW)
+
+**Live state:**
+- **Neon Postgres** connected + loaded with the full 161-ticker dataset
+  (`bioterm import-sqlite`). Project `lingering-leaf-70821008`, branch `production`,
+  pooled endpoint `ep-curly-thunder-b2tm2nhm-pooler.c-6.eu-central-1`. **The DB URL is
+  a GitHub Actions secret + goes in Streamlit secrets — it is NOT in the repo.**
+- **GitHub repo (PRIVATE): https://github.com/Nishant808/bioterm** — pushed, secrets
+  `DATABASE_URL` + `SEC_UA` set. Crons tuned for the 2000-min/mo free tier
+  (`ingest-fast` every 2h 11-23 UTC, `ingest-full` daily 09:00 UTC).
+- **First workflow runs:** the initial `uv pip install --system` failed (runner python
+  is PEP-668 externally-managed) → fixed to `uv sync --no-dev` + `uv run` (commit
+  `<see git>`), pushed, re-triggered. Watching run 34388681038.
+- Dashboard verified rendering against the real Neon DB (all 8 pages).
+
+**What's left:**
+| step | who | status |
+|---|---|---|
+| Actions runs go green | Claude (watching) | 🔄 in progress |
+| **Deploy on Streamlit Community Cloud** | **YOU** — see "Your manual steps" below | ⛔ |
+| final smoke test (dashboard on Streamlit Cloud shows live data) | Claude + you | ⛔ |
+
+### Your manual step — Streamlit Community Cloud (~3 min)
+
+1. **<https://share.streamlit.io>** → sign in with GitHub → **authorize access to your
+   private repos** (it'll ask).
+2. **New app** → repo `Nishant808/bioterm`, branch `main`, main file `dashboard/Home.py`.
+3. **Advanced settings** → Python version **3.12**.
+4. **Secrets** box — paste exactly:
+   ```
+   DATABASE_URL = "postgresql+psycopg://neondb_owner:npg_Al9Cg1moaQNw@ep-curly-thunder-b2tm2nhm-pooler.c-6.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+   BIOTERM_SEC_USER_AGENT = "BioTerm/0.1 (nishantthalwal@gmail.com)"
+   ```
+5. **Deploy.** Data shows immediately (Neon is already populated). Send me the app URL.
+
+Optional later: add `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` (Actions secrets) for
+alert push; add `GH_DISPATCH_TOKEN` + `GH_REPO=Nishant808/bioterm` (Streamlit secrets)
+for the in-dashboard "↻ refresh now" button.
+
+---
+
+## ⏯️ (previous) RESUME HERE  (end of session 2)
 
 **Where we are:** MVP + feature passes done and green (34 tests). All cloud plumbing
 written and committed — **9 commits** on a standalone git repo at `~/Desktop/cld`,
