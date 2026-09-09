@@ -42,21 +42,15 @@ def test_nearer_catalyst_scores_higher():
     assert df.loc["NEAR", "focus_score"] > df.loc["FARC", "focus_score"]
 
 
-def test_conviction_multiplier_lifts_score(monkeypatch):
+def test_conviction_multiplier_lifts_score():
     _seed_two_names()
-    import bioterm.process.score as score_mod
+    from bioterm import store
 
-    real_load = score_mod.load_settings
-
-    def patched():
-        s = real_load()
-        s.watchlist = [{"ticker": "NEAR", "conviction": 5}]
-        return s
-
-    monkeypatch.setattr(score_mod, "load_settings", patched)
+    store.save_watchlist([{"ticker": "NEAR", "conviction": 5, "thesis": "", "molecules": []}])
     score.run()
     df = read_sql("SELECT ticker, conviction_mult FROM scores").set_index("ticker")
     assert df.loc["NEAR", "conviction_mult"] > df.loc["FARC", "conviction_mult"]
+    assert df.loc["NEAR", "conviction_mult"] == 1.4
 
 
 def test_short_runway_raises_risk():

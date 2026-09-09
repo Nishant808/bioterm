@@ -51,12 +51,24 @@ def ingest(
     limit: int = typer.Option(0, help="cap universe size (0 = all)"),
     only: str = typer.Option("", help="comma list: prices,technicals,edgar,fundamentals,"
                                       "clinical,fda,news,sentiment,catalysts,score"),
+    preset: str = typer.Option("", help="'fast' (news+score, for a frequent cron) or "
+                                        "'full' (everything, for a 2-3x/day cron)"),
 ) -> None:
     """Run the ingestion + processing pipeline."""
     from . import pipeline
     from .universe import universe_tickers
 
     lim = limit or None
+
+    if preset == "fast":
+        only = "news,sentiment,catalysts,score"
+    elif preset == "full":
+        only = ""  # full refresh path below
+
+    if preset == "full":
+        console.print_json(data=pipeline.run_full_refresh(limit=lim))
+        return
+
     if only:
         wanted = {s.strip() for s in only.split(",") if s.strip()}
         tickers = universe_tickers(limit=lim)

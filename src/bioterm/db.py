@@ -199,6 +199,48 @@ ingest_runs = Table(
     Column("detail", Text),
 )
 
+# ------------------------------------------------------------------ user-editable
+# These hold state the dashboard mutates. They are seeded once from the YAML files
+# under config/, then the DB is the source of truth (so edits survive on a cloud
+# deploy where the filesystem is ephemeral and the Actions runner is a separate
+# checkout).
+
+watchlist = Table(
+    "watchlist", metadata,
+    Column("ticker", String(16), primary_key=True),
+    Column("conviction", Integer, default=3),
+    Column("thesis", Text),
+    Column("molecules", Text),   # JSON array of strings
+    Column("added_at", DateTime),
+    Column("updated_at", DateTime),
+)
+
+manual_catalysts = Table(
+    "manual_catalysts", metadata,
+    Column("id", String(48), primary_key=True),
+    Column("ticker", String(16), index=True),
+    Column("type", String(32)),
+    Column("date", Date),
+    Column("title", Text),
+    Column("confidence", String(16)),
+    Column("url", String(256)),
+    Column("created_at", DateTime),
+)
+
+notes = Table(
+    "notes", metadata,
+    Column("ticker", String(16), primary_key=True),
+    Column("body", Text),
+    Column("updated_at", DateTime),
+)
+
+app_meta = Table(
+    "app_meta", metadata,
+    Column("key", String(64), primary_key=True),
+    Column("value", Text),       # JSON
+    Column("updated_at", DateTime),
+)
+
 
 _ENGINE: Engine | None = None
 
@@ -212,9 +254,18 @@ def get_engine() -> Engine:
     return _ENGINE
 
 
-def init_db() -> list[str]:
+def init_db(seed: bool = True) -> list[str]:
     engine = get_engine()
     metadata.create_all(engine)
+    if seed:
+        try:
+            from .store import seed_from_yaml
+
+            seed_from_yaml()
+        except Exception as exc:  # noqa: BLE001
+            import logging
+
+            logging.getLogger("bioterm.db").warning("yaml seed skipped: %s", exc)
     return sorted(inspect(engine).get_table_names())
 
 
@@ -284,8 +335,16 @@ def _fallback_upsert(engine, table, rows, pk_cols) -> int:
 
 
 def read_sql(query, params: dict | None = None) -> pd.DataFrame:
-    """Run a SQLAlchemy selectable or raw SQL string -> DataFrame."""
+    """Run a SQLAlchemy selectable or raw SQL string -> DataFrame.
+
+    Raw strings are wrapped in ``text()`` so ``:name`` params work identically on
+    SQLite and Postgres regardless of the pandas version.
+    """
+    from sqlalchemy import text
+
     engine = get_engine()
+    if isinstance(query, str):
+        query = text(query)
     with engine.connect() as conn:
         return pd.read_sql(query, conn, params=params)
 

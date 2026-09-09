@@ -6,11 +6,39 @@ import plotly.express as px
 import streamlit as st
 
 from _shared import (PLOTLY_TEMPLATE, catalysts_df, disclaimer, scores_df,
-                     sidebar_freshness)
+                     sidebar_freshness, universe_df)
+from bioterm import store
+
+CATALYST_TYPES = ["pdufa", "adcom", "fda_action", "phase3_readout", "phase2_readout",
+                  "phase1_readout", "data_presentation", "earnings", "other"]
 
 st.title("Catalyst Calendar")
 disclaimer()
 sidebar_freshness()
+
+with st.expander("＋ Pin a catalyst you know about (PDUFA, AdCom, expected readout)"):
+    with st.form("add_cat_cal", clear_on_submit=True):
+        a, b, c, d = st.columns([1, 1, 1, 1])
+        _tk = a.selectbox("ticker", universe_df()["ticker"].tolist())
+        _ty = b.selectbox("type", CATALYST_TYPES)
+        _dt = c.date_input("date")
+        _cf = d.select_slider("confidence", ["low", "medium", "high"], value="medium")
+        _ti = st.text_input("what happens")
+        _ur = st.text_input("source link (optional)")
+        if st.form_submit_button("add", type="primary") and _ti:
+            store.add_manual_catalyst(_tk, _ty, _dt, _ti, _cf, _ur)
+            st.cache_data.clear()
+            st.success(f"pinned for {_tk}")
+            st.rerun()
+    _manual = store.get_manual_catalysts()
+    if _manual:
+        for mc in _manual:
+            x, y = st.columns([6, 1])
+            x.write(f"• **{mc['date']}** · `{mc['ticker']}` · {mc['type']} · {mc['title']}")
+            if y.button("delete", key=f"delc_{mc['id']}"):
+                store.delete_manual_catalyst(mc["id"])
+                st.cache_data.clear()
+                st.rerun()
 
 cats = catalysts_df()
 if cats.empty:
@@ -32,7 +60,12 @@ if only_wl:
     view = view[view["is_watchlist"] == 1]
 view = view.sort_values("date")
 
-st.caption(f"{len(view)} catalysts · {view['ticker'].nunique()} companies")
+cc1, cc2 = st.columns([4, 1])
+cc1.caption(f"{len(view)} catalysts · {view['ticker'].nunique()} companies")
+cc2.download_button(
+    "⬇ CSV",
+    view[["date", "ticker", "type", "title", "months_away", "confidence", "source", "url"]]
+    .to_csv(index=False), "bioterm_catalysts.csv", "text/csv", use_container_width=True)
 
 # ---------------------------------------------------------------- timeline
 if not view.empty:

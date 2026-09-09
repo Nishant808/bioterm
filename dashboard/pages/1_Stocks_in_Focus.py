@@ -7,6 +7,7 @@ import streamlit as st
 
 from _shared import (PLOTLY_TEMPLATE, disclaimer, prev_scores_df, scores_df,
                      sidebar_freshness)
+from bioterm import store
 
 st.title("Stocks in Focus")
 disclaimer()
@@ -45,10 +46,13 @@ if not prev.empty:
 else:
     df["Δrank"] = 0
 
-st.caption(f"{len(df)} names")
+cap1, cap2 = st.columns([4, 1])
+cap1.caption(f"{len(df)} names")
 table = df[["rank", "ticker", "name", "focus_score", "momentum", "catalyst",
             "newsflow", "risk", "conviction_mult", "Δrank"]].rename(
     columns={"focus_score": "focus", "conviction_mult": "conv"})
+cap2.download_button("⬇ CSV", table.to_csv(index=False), "bioterm_focus.csv",
+                     "text/csv", use_container_width=True)
 st.dataframe(
     table, hide_index=True, use_container_width=True, height=460,
     column_config={
@@ -117,4 +121,11 @@ if cd:
     st.markdown("**Catalyst ledger (contribution-ranked)**")
     st.dataframe(pd.DataFrame(cd), hide_index=True, use_container_width=True)
 
-st.page_link("pages/2_Stock_Detail.py", label=f"→ open {pick} detail", icon="🔬")
+act1, act2 = st.columns([1, 3])
+_on_wl = pick in {w["ticker"].upper() for w in store.get_watchlist()}
+if act1.button("★ on watchlist" if _on_wl else "★ add to watchlist", disabled=_on_wl):
+    store.add_to_watchlist(pick, 3)
+    st.cache_data.clear()
+    st.toast(f"{pick} added to watchlist")
+    st.rerun()
+act2.page_link("pages/2_Stock_Detail.py", label=f"→ open {pick} detail", icon="🔬")

@@ -176,7 +176,9 @@ def build_universe(force: bool = False) -> pd.DataFrame:
             rec["in_seed"] = 1
 
     if ucfg.get("include_watchlist", True):
-        for w in cfg.watchlist:
+        from .store import get_watchlist
+
+        for w in get_watchlist():
             rec = _touch(str(w["ticker"]))
             rec["is_watchlist"] = 1
 

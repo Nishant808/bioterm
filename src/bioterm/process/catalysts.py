@@ -198,8 +198,10 @@ def _from_earnings() -> list[dict]:
 
 
 def _from_manual() -> list[dict]:
+    from ..store import get_manual_catalysts
+
     out = []
-    for c in load_settings().manual_catalysts:
+    for c in get_manual_catalysts():
         d = pd.to_datetime(c.get("date"), errors="coerce")
         if pd.isna(d) or not c.get("ticker"):
             continue

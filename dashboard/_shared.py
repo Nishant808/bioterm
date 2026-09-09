@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -13,8 +14,24 @@ _SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
+# On Streamlit Community Cloud the DB URL comes in via st.secrets, not the env.
+# Bridge it into the environment *before* bioterm.config reads it.
+try:
+    for _k in ("DATABASE_URL", "BIOTERM_SEC_USER_AGENT"):
+        if _k in st.secrets and _k not in os.environ:
+            os.environ[_k] = str(st.secrets[_k])
+except Exception:  # noqa: BLE001 - no secrets file locally is fine
+    pass
+
 from bioterm.config import load_settings  # noqa: E402
-from bioterm.db import read_sql  # noqa: E402
+from bioterm.db import init_db, read_sql  # noqa: E402
+
+# Make sure tables exist (harmless if they already do) - covers a fresh cloud DB
+# before the first Actions run has landed.
+try:
+    init_db()
+except Exception:  # noqa: BLE001
+    pass
 
 PLOTLY_TEMPLATE = "plotly_dark"
 ACCENT = "#00b8d4"

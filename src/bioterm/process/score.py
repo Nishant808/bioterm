@@ -223,8 +223,13 @@ def run() -> dict:
     df["newsflow"] = df["newsflow"].fillna(0.05)
     df["risk"] = df["risk"].fillna(0.15)
 
+    from ..store import get_watchlist
+
+    conviction_by_ticker = {w["ticker"].upper(): int(w.get("conviction", 3))
+                            for w in get_watchlist()}
+
     def conv_mult(row) -> float:
-        c = cfg.conviction_for(row["ticker"])
+        c = conviction_by_ticker.get(str(row["ticker"]).upper())
         return conv_map.get(int(c), default_conv) if c is not None else default_conv
 
     df["conviction_mult"] = df.apply(conv_mult, axis=1)

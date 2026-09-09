@@ -11,7 +11,10 @@ from _shared import (PLOTLY_TEMPLATE, catalysts_df, disclaimer, filings_df,
                      fundamentals_row, money, news_df, pct, prices_df,
                      runway_badge, scores_df, sidebar_freshness, technicals_df,
                      trials_df, universe_df)
-from bioterm.config import load_settings
+from bioterm import store
+
+CATALYST_TYPES = ["pdufa", "adcom", "fda_action", "phase3_readout", "phase2_readout",
+                  "phase1_readout", "data_presentation", "earnings", "other"]
 
 st.title("Stock Detail")
 disclaimer()
@@ -34,7 +37,7 @@ st.query_params["ticker"] = ticker
 meta = uni[uni["ticker"] == ticker].iloc[0]
 srow = scores[scores["ticker"] == ticker]
 fund = fundamentals_row(ticker)
-wl = next((w for w in load_settings().watchlist
+wl = next((w for w in store.get_watchlist()
            if str(w["ticker"]).upper() == ticker), None)
 
 h1, h2, h3, h4, h5 = st.columns(5)
@@ -47,11 +50,47 @@ h3.metric("market cap", money(fund.get("market_cap")))
 h4.metric("cash", money(fund.get("cash")))
 h5.metric("ann. burn", money(fund.get("burn_ttm")))
 st.caption(runway_badge(fund.get("runway_quarters")))
-if wl:
-    st.info(f"**On your watchlist — conviction {wl.get('conviction')}/5.** "
-            f"{wl.get('thesis', '')}")
+
+# --- watchlist / conviction controls ---
+wc1, wc2 = st.columns([1, 3])
+on_wl = wl is not None
+with wc1:
+    conv = st.select_slider(
+        "your conviction", options=[1, 2, 3, 4, 5],
+        value=int(wl["conviction"]) if on_wl else 3,
+        help="your read on whether the science works — multiplies the Focus Score")
+with wc2:
+    st.write("")
+    st.write("")
+    b1, b2 = st.columns(2)
+    if b1.button(("✏️ update conviction" if on_wl else "★ add to watchlist"),
+                 use_container_width=True):
+        store.add_to_watchlist(ticker, conv, wl.get("thesis", "") if on_wl else "")
+        st.cache_data.clear()
+        st.toast(f"{ticker} → watchlist @ conviction {conv}")
+        st.rerun()
+    if on_wl and b2.button("✖ remove from watchlist", use_container_width=True):
+        store.remove_from_watchlist(ticker)
+        st.cache_data.clear()
+        st.toast(f"{ticker} removed")
+        st.rerun()
+if on_wl:
+    thesis = st.text_input("thesis", value=wl.get("thesis", ""),
+                           key=f"thesis_{ticker}")
+    if thesis != wl.get("thesis", ""):
+        store.add_to_watchlist(ticker, conv, thesis)
+        st.cache_data.clear()
     if wl.get("molecules"):
         st.caption("tracked programs: " + " · ".join(wl["molecules"]))
+
+# --- research notes (persisted) ---
+with st.expander("📝 research notes", expanded=bool(store.get_note(ticker))):
+    note = st.text_area("notes", value=store.get_note(ticker), height=120,
+                        label_visibility="collapsed", key=f"note_{ticker}")
+    if st.button("save note", key=f"savenote_{ticker}"):
+        store.set_note(ticker, note)
+        st.cache_data.clear()
+        st.toast("note saved")
 
 tab_px, tab_pipe, tab_cat, tab_news, tab_fil = st.tabs(
     ["📈 Price & technicals", "🧪 Pipeline", "🗓 Catalysts", "📰 News", "📄 SEC filings"])
@@ -152,12 +191,38 @@ with tab_cat:
     cat = catalysts_df()
     cat = cat[cat["ticker"] == ticker].sort_values("date")
     if cat.empty:
-        st.info("no dated catalysts derived for this name")
+        st.info("no dated catalysts derived for this name yet — add one below")
     else:
         st.dataframe(
             cat[["date", "type", "title", "months_away", "confidence", "source", "url"]],
             hide_index=True, use_container_width=True,
             column_config={"url": st.column_config.LinkColumn("src", display_text="↗")})
+
+    with st.form(f"add_cat_{ticker}", clear_on_submit=True):
+        st.markdown("**＋ Pin a catalyst you know about** (PDUFA date, AdCom, expected readout)")
+        fc1, fc2, fc3 = st.columns([1, 1, 2])
+        c_type = fc1.selectbox("type", CATALYST_TYPES, index=0)
+        c_date = fc2.date_input("date")
+        c_conf = fc3.select_slider("confidence", ["low", "medium", "high"], value="medium")
+        c_title = st.text_input("what happens", placeholder="e.g. FDA decision on ___ sNDA")
+        c_url = st.text_input("source link (optional)")
+        if st.form_submit_button("add catalyst", type="primary") and c_title:
+            store.add_manual_catalyst(ticker, c_type, c_date, c_title, c_conf, c_url)
+            st.cache_data.clear()
+            st.success("added — it feeds the Focus Score on the next refresh/score run")
+            st.rerun()
+
+    manual = [c for c in store.get_manual_catalysts()
+              if str(c.get("ticker", "")).upper() == ticker]
+    if manual:
+        st.caption("your pinned catalysts:")
+        for c in manual:
+            mc1, mc2 = st.columns([6, 1])
+            mc1.write(f"• **{c['date']}** · {c['type']} · {c['title']}  ({c['confidence']})")
+            if mc2.button("delete", key=f"delcat_{c['id']}"):
+                store.delete_manual_catalyst(c["id"])
+                st.cache_data.clear()
+                st.rerun()
 
 # ------------------------------------------------------------------- news
 with tab_news:

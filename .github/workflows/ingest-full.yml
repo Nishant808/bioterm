@@ -1,0 +1,42 @@
+# Full pipeline: universe + prices + technicals + EDGAR + fundamentals + clinical
+# trials + FDA + news + catalysts + Focus Score. ~15-25 min. Runs 3x/day.
+#
+# Requires two repo secrets (Settings -> Secrets and variables -> Actions):
+#   DATABASE_URL  postgresql+psycopg://user:pass@host/db?sslmode=require
+#   SEC_UA        "BioTerm/0.1 (you@example.com)"     <- SEC requires a real contact
+#
+# ▸ Public repo  = unlimited Actions minutes (recommended for this).
+# ▸ Private repo = 2000 min/month free; this workflow alone is ~75 min/day, so on a
+#   private repo widen the cron below (e.g. once a day) or make the repo public.
+
+name: ingest-full
+
+on:
+  schedule:
+    - cron: "0 6,13,21 * * *"      # 06:00 / 13:00 / 21:00 UTC
+  workflow_dispatch: {}
+
+concurrency:
+  group: bioterm-ingest            # never overlap fast + full
+  cancel-in-progress: false
+
+jobs:
+  full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv pip install --system -e .
+      - name: Full refresh
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BIOTERM_SEC_USER_AGENT: ${{ secrets.SEC_UA }}
+        run: bioterm ingest --preset full
+      - name: Summary
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: bioterm status || true
