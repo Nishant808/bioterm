@@ -209,6 +209,23 @@ score_snapshots = Table(
     Column("rank", Integer),
 )
 
+insider_txns = Table(
+    "insider_txns", metadata,
+    Column("id", String(48), primary_key=True),
+    Column("ticker", String(16), index=True),
+    Column("filed_date", Date),
+    Column("txn_date", Date, index=True),
+    Column("owner", String(160)),
+    Column("role", String(64)),          # Director / Officer:<title> / 10% owner
+    Column("code", String(4)),           # P buy, S sale, M option ex, F tax, A award, G gift…
+    Column("acquired_disposed", String(2)),
+    Column("shares", Float),
+    Column("price", Float),
+    Column("value", Float),              # shares * price (signed +buy / -sell)
+    Column("url", String(256)),
+    Column("fetched_at", DateTime),
+)
+
 # append-only record of alerts that fired (from `bioterm alerts`)
 alerts_fired = Table(
     "alerts_fired", metadata,

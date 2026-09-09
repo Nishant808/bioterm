@@ -8,9 +8,9 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from _shared import (PLOTLY_TEMPLATE, catalysts_df, disclaimer, filings_df,
-                     fundamentals_row, money, news_df, pct, prices_df,
-                     runway_badge, score_history, scores_df, sidebar_freshness,
-                     technicals_df, trials_df, universe_df)
+                     fundamentals_row, insider_txns_df, money, news_df, pct,
+                     prices_df, runway_badge, score_history, scores_df,
+                     sidebar_freshness, technicals_df, trials_df, universe_df)
 from bioterm import store
 
 CATALYST_TYPES = ["pdufa", "adcom", "fda_action", "phase3_readout", "phase2_readout",
@@ -102,8 +102,9 @@ with st.expander("📝 research notes", expanded=bool(store.get_note(ticker))):
         st.cache_data.clear()
         st.toast("note saved")
 
-tab_px, tab_pipe, tab_cat, tab_news, tab_fil = st.tabs(
-    ["📈 Price & technicals", "🧪 Pipeline", "🗓 Catalysts", "📰 News", "📄 SEC filings"])
+tab_px, tab_pipe, tab_cat, tab_news, tab_ins, tab_fil = st.tabs(
+    ["📈 Price & technicals", "🧪 Pipeline", "🗓 Catalysts", "📰 News",
+     "👤 Insiders", "📄 SEC filings"])
 
 # ------------------------------------------------------------------- price
 with tab_px:
@@ -248,6 +249,36 @@ with tab_news:
         st.markdown(f"{icon} [{r['title']}]({r['url']})  \n"
                     f"<span style='color:#888'>{when} · {r['source']} · "
                     f"sentiment {r['sentiment']:+.2f}{tags}</span>", unsafe_allow_html=True)
+
+# ------------------------------------------------------------------- insiders
+with tab_ins:
+    it = insider_txns_df(ticker)
+    if it.empty:
+        st.info("no Form 4 activity pulled for this name (insiders are fetched for "
+                "the watchlist + top-60 focus names each full refresh)")
+    else:
+        buys = it[it["code"] == "P"]
+        sells = it[it["code"] == "S"]
+        w90 = pd.Timestamp.today() - pd.Timedelta(days=90)
+        b90 = buys[buys["txn_date"] >= w90]["value"].sum()
+        s90 = -sells[sells["txn_date"] >= w90]["value"].sum()
+        m1, m2, m3 = st.columns(3)
+        m1.metric("open-market buys (90d)", money(b90) if b90 else "–",
+                  f"{buys[buys['txn_date'] >= w90]['owner'].nunique()} insiders")
+        m2.metric("open-market sells (90d)", money(s90) if s90 else "–")
+        m3.metric("net (90d)", money(b90 - s90))
+        st.caption("codes: **P** open-market buy · **S** sale · M option exercise · "
+                   "F tax withhold · A award · G gift")
+        show = it[["txn_date", "owner", "role", "code", "acquired_disposed",
+                   "shares", "price", "value", "url"]].head(80)
+        st.dataframe(
+            show, hide_index=True, use_container_width=True,
+            column_config={
+                "value": st.column_config.NumberColumn("$ value", format="$%,.0f"),
+                "price": st.column_config.NumberColumn(format="$%.2f"),
+                "shares": st.column_config.NumberColumn(format="%,d"),
+                "url": st.column_config.LinkColumn("form 4", display_text="↗"),
+            })
 
 # ------------------------------------------------------------------- filings
 with tab_fil:

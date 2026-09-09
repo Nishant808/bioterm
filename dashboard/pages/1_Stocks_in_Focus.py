@@ -91,13 +91,21 @@ with cc1:
         marker_color=["#26a69a" if v >= 0 else "#ef5350" for v in contrib.values()],
         text=[f"{v:+.3f}" for v in contrib.values()], textposition="outside",
     ))
+    _im = obj.get("insider_mult", 1.0)
+    _mult_txt = f"× conviction {obj.get('conviction_mult', 1):.2f}"
+    if _im and _im > 1.001:
+        _mult_txt += f" · × insider {_im:.2f}"
     fig.update_layout(
         template=PLOTLY_TEMPLATE, height=260, margin=dict(l=10, r=10, t=30, b=10),
-        title=f"{pick} — weighted contributions (× conviction {obj.get('conviction_mult', 1):.2f})",
+        title=f"{pick} — weighted contributions ({_mult_txt})",
         xaxis_title="contribution to Focus Score",
     )
     st.plotly_chart(fig, use_container_width=True)
     st.metric("Focus Score", f"{row['focus_score']:.3f}", f"rank #{int(row['rank'])}")
+    _id = obj.get("insider_detail")
+    if isinstance(_id, dict):
+        st.caption(f"🟢 insider buying: {_id.get('n_buyers')} insider(s), "
+                   f"${_id.get('buy_value', 0):,.0f} open-market (90d)")
 
 with cc2:
     md = obj.get("momentum_detail", {})

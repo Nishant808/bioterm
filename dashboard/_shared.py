@@ -139,6 +139,16 @@ def fundamentals_row(ticker: str) -> dict:
 
 
 @st.cache_data(ttl=120)
+def insider_txns_df(ticker: str) -> pd.DataFrame:
+    df = q("SELECT * FROM insider_txns WHERE ticker = :t ORDER BY txn_date DESC",
+           {"t": ticker})
+    if not df.empty:
+        for c in ("txn_date", "filed_date"):
+            df[c] = pd.to_datetime(df[c], errors="coerce")
+    return df
+
+
+@st.cache_data(ttl=120)
 def filings_df(ticker: str) -> pd.DataFrame:
     df = q("SELECT * FROM filings WHERE ticker = :t ORDER BY filed_date DESC LIMIT 40",
            {"t": ticker})

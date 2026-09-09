@@ -10,7 +10,7 @@ import traceback
 from datetime import datetime, timezone
 
 from .db import bulk_upsert, ingest_runs, init_db
-from .ingest import clinical, edgar, fda
+from .ingest import clinical, edgar, fda, insiders
 from .ingest import fundamentals as ingest_fundamentals
 from .ingest import news, prices
 from .process import catalysts, score, sentiment, technicals
@@ -82,6 +82,11 @@ def refresh_pipeline_data(tickers: list[str] | None = None) -> dict:
     return out
 
 
+def refresh_insiders(_: list[str] | None = None) -> dict:
+    # insiders.run() picks its own bounded set (watchlist + top-60 focus)
+    return {"insiders": run_job("insiders", insiders.run)}
+
+
 def refresh_news(tickers: list[str] | None = None) -> dict:
     out = {}
     out["news"] = run_job("news", news.run, tickers)
@@ -108,6 +113,8 @@ def run_full_refresh(limit: int | None = None, skip_universe: bool = False) -> d
         "fundamentals": refresh_fundamentals(tickers),
         "pipeline": refresh_pipeline_data(tickers),
         "news": refresh_news(tickers),
+        # insiders.run() targets watchlist + the *previous* run's top-60 focus names
+        "insiders": refresh_insiders(),
         "recompute": recompute(),
     }
     return results

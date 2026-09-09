@@ -55,6 +55,7 @@ def _clinical_job() -> None:
 
 def _fundamentals_job() -> None:
     pipeline.refresh_fundamentals(pipeline.universe_tickers())
+    pipeline.refresh_insiders()
     pipeline.recompute()
 
 

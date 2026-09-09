@@ -50,7 +50,7 @@ def ingest(
     once: bool = typer.Option(True, "--once/--no-once", help="run a single full refresh"),
     limit: int = typer.Option(0, help="cap universe size (0 = all)"),
     only: str = typer.Option("", help="comma list: prices,technicals,edgar,fundamentals,"
-                                      "clinical,fda,news,sentiment,catalysts,score"),
+                                      "clinical,fda,insiders,news,sentiment,catalysts,score"),
     preset: str = typer.Option("", help="'fast' (news+score, for a frequent cron) or "
                                         "'full' (everything, for a 2-3x/day cron)"),
 ) -> None:
@@ -79,13 +79,14 @@ def ingest(
             "fundamentals": lambda: pipeline.run_job("fundamentals", _m("ingest.fundamentals").run, tickers),
             "clinical": lambda: pipeline.run_job("clinical", _m("ingest.clinical").run, tickers),
             "fda": lambda: pipeline.run_job("fda", _m("ingest.fda").run, tickers),
+            "insiders": lambda: pipeline.run_job("insiders", _m("ingest.insiders").run),
             "news": lambda: pipeline.run_job("news", _m("ingest.news").run, tickers),
             "sentiment": lambda: pipeline.run_job("sentiment", _m("process.sentiment").run, True),
             "catalysts": lambda: pipeline.run_job("catalysts", _m("process.catalysts").run),
             "score": lambda: pipeline.run_job("score", _m("process.score").run),
         }
         for name in ["prices", "technicals", "edgar", "fundamentals", "clinical",
-                     "fda", "news", "sentiment", "catalysts", "score"]:
+                     "fda", "insiders", "news", "sentiment", "catalysts", "score"]:
             if name in wanted:
                 console.rule(name)
                 console.print(jobmap[name]())

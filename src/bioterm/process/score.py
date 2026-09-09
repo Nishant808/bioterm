@@ -190,6 +190,33 @@ def _risk_scores(cfg) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=cols)
 
 
+# ------------------------------------------------------------------ insider buying
+def _insider_frame(days: int = 90) -> pd.DataFrame:
+    """Cluster open-market insider buying -> a small score multiplier (1.0 .. ~1.15)."""
+    cols = ["ticker", "insider_mult", "insider_detail"]
+    try:
+        from ..ingest.insiders import net_open_market
+
+        nom = net_open_market(days=days)
+    except Exception:  # noqa: BLE001
+        return pd.DataFrame(columns=cols)
+    if nom.empty:
+        return pd.DataFrame(columns=cols)
+    rows = []
+    for _, r in nom.iterrows():
+        buy = float(r["buy_value"])
+        n = int(r["n_buyers"])
+        if buy <= 0:
+            mult, note = 1.0, None
+        else:
+            mult = 1.0 + min(0.15, 0.04 * n + math.tanh(buy / 3_000_000) * 0.09)
+            note = {"buy_value": round(buy), "n_buyers": n,
+                    "net_value": round(float(r["net_value"]))}
+        rows.append({"ticker": r["ticker"], "insider_mult": round(mult, 4),
+                     "insider_detail": note})
+    return pd.DataFrame(rows, columns=cols)
+
+
 # ------------------------------------------------------------------ compose
 def run() -> dict:
     cfg = load_settings()
@@ -212,16 +239,20 @@ def run() -> dict:
     cat = _catalyst_scores(cfg)
     news_s = _newsflow_scores()
     risk = _risk_scores(cfg)
+    insider = _insider_frame()
 
     df = universe.merge(mom, on="ticker", how="left") \
                  .merge(cat, on="ticker", how="left") \
                  .merge(news_s, on="ticker", how="left") \
-                 .merge(risk, on="ticker", how="left")
+                 .merge(risk, on="ticker", how="left") \
+                 .merge(insider, on="ticker", how="left")
 
     df["momentum"] = df["momentum"].fillna(0.4)
     df["catalyst"] = df["catalyst"].fillna(0.0)
     df["newsflow"] = df["newsflow"].fillna(0.05)
     df["risk"] = df["risk"].fillna(0.15)
+    df["insider_mult"] = df["insider_mult"].fillna(1.0)
+    df["insider_detail"] = df["insider_detail"].where(df["insider_detail"].notna(), None)
 
     from ..store import get_watchlist
 
@@ -234,7 +265,7 @@ def run() -> dict:
 
     df["conviction_mult"] = df.apply(conv_mult, axis=1)
     df["focus_score"] = (
-        df["conviction_mult"] * (
+        df["conviction_mult"] * df["insider_mult"] * (
             w_mom * df["momentum"] + w_cat * df["catalyst"] + w_news * df["newsflow"]
         ) - w_risk * df["risk"]
     ).round(4)
@@ -262,6 +293,8 @@ def run() -> dict:
             "news_detail": r.get("news_detail") if isinstance(r.get("news_detail"), dict) else {},
             "risk_detail": r.get("risk_detail") if isinstance(r.get("risk_detail"), dict) else {},
             "runway_quarters": r.get("runway_quarters"),
+            "insider_mult": round(float(r.get("insider_mult", 1.0)), 3),
+            "insider_detail": r.get("insider_detail") if isinstance(r.get("insider_detail"), dict) else None,
         }
         rows.append(
             {
