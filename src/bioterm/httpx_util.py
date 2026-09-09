@@ -46,21 +46,22 @@ def _host(url: str) -> str:
         return url
 
 
-def _request(url, params, headers, min_interval, *, want: str, retries: int):
+def _request(url, params, headers, min_interval, *, want, retries, timeout, backoff_429):
     retryer = Retrying(
         reraise=True,
         stop=stop_after_attempt(retries),
-        wait=wait_exponential(multiplier=1, min=2, max=15),
+        wait=wait_exponential(multiplier=1, min=1, max=8),
         retry=retry_if_exception_type((requests.RequestException,)),
     )
+    to = timeout if timeout is not None else load_settings().http_timeout
 
     def _once():
         _throttle(_host(url), min_interval)
-        timeout = load_settings().http_timeout
-        resp = session().get(url, params=params, headers=headers, timeout=timeout)
+        resp = session().get(url, params=params, headers=headers,
+                             timeout=(5, to))  # (connect, read)
         if resp.status_code == 429:
-            log.warning("429 from %s - backing off 5s", _host(url))
-            time.sleep(5)
+            log.warning("429 from %s - backing off %ss", _host(url), backoff_429)
+            time.sleep(backoff_429)
         resp.raise_for_status()
         return resp.json() if want == "json" else resp.content
 
@@ -74,8 +75,11 @@ def get_json(
     headers: dict[str, str] | None = None,
     min_interval: float = 0.2,
     retries: int = 4,
+    timeout: float | None = None,
+    backoff_429: float = 5.0,
 ) -> Any:
-    return _request(url, params, headers, min_interval, want="json", retries=retries)
+    return _request(url, params, headers, min_interval, want="json", retries=retries,
+                    timeout=timeout, backoff_429=backoff_429)
 
 
 def get_bytes(
@@ -85,5 +89,8 @@ def get_bytes(
     headers: dict[str, str] | None = None,
     min_interval: float = 0.2,
     retries: int = 4,
+    timeout: float | None = None,
+    backoff_429: float = 5.0,
 ) -> bytes:
-    return _request(url, params, headers, min_interval, want="bytes", retries=retries)
+    return _request(url, params, headers, min_interval, want="bytes", retries=retries,
+                    timeout=timeout, backoff_429=backoff_429)

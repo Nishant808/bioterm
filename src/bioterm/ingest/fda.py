@@ -46,7 +46,10 @@ def _mk_id(*parts) -> str:
 def fetch_sponsor(token: str, limit: int = 100) -> list[dict]:
     params = {"search": f"sponsor_name:{token}*", "limit": limit}
     try:
-        data = get_json(API, params=params, min_interval=2.5, retries=2)
+        # short read timeout + 1 retry + short 429 backoff: openFDA is the flakiest
+        # source and must never stall the whole pipeline
+        data = get_json(API, params=params, min_interval=2.5, retries=1,
+                        timeout=12, backoff_429=2)
     except Exception as exc:  # noqa: BLE001
         if "NOT_FOUND" in str(exc) or "404" in str(exc):
             return []
@@ -54,7 +57,7 @@ def fetch_sponsor(token: str, limit: int = 100) -> list[dict]:
     return data.get("results", []) or []
 
 
-def run(tickers: list[str] | None = None, time_budget_s: float = 240.0) -> dict:
+def run(tickers: list[str] | None = None, time_budget_s: float = 180.0) -> dict:
     tickers = tickers or universe_tickers()
     secs = read_sql("SELECT ticker, name FROM securities")
     name_by_ticker = dict(zip(secs["ticker"], secs["name"])) if not secs.empty else {}
@@ -83,8 +86,8 @@ def run(tickers: list[str] | None = None, time_budget_s: float = 240.0) -> dict:
         except Exception as exc:  # noqa: BLE001
             log.warning("openFDA fetch failed for %s (%s): %s", tk, token, exc)
             consecutive_fail += 1
-            if consecutive_fail >= 5:
-                log.error("openFDA: 5 consecutive failures - aborting fda ingest")
+            if consecutive_fail >= 4:
+                log.error("openFDA: 4 consecutive failures - aborting fda ingest")
                 stopped_early = True
                 break
             continue

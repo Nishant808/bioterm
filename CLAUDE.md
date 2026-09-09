@@ -1,0 +1,58 @@
+# CLAUDE.md — working on BioTerm
+
+Biotech/pharma **catalyst-monitoring terminal**, 6-month swing horizon. Surfaces names
+*before* a pipeline-driven move. Monitoring/screening tool — **never** framed as
+investment advice.
+
+**Read `DEPLOYMENT_LOG.md` first** — it's the live state + resume checklist.
+
+## Layout
+
+```
+src/bioterm/
+  config.py     YAML + env  ·  db.py  SQLAlchemy Core schema (19 tables) + portable bulk_upsert
+  store.py      DB-backed user state (watchlist / manual catalysts / notes / app_meta) — YAML seeds once
+  universe.py   XBI holdings + seed list + watchlist  →  securities
+  httpx_util.py pooled session, retry/backoff, per-host throttle
+  ingest/       prices fundamentals edgar clinical fda insiders news   (each: run(tickers) -> dict)
+  process/      technicals sentiment catalysts score
+  alerts.py     evaluate rules  →  alerts_fired  (+ optional Telegram)
+  pipeline.py   run_job() wrapper (logs to ingest_runs) + run_full_refresh()
+  scheduler.py  APScheduler (local "always on")
+  cli.py        typer:  init-db · universe · ingest · score · alerts · status · serve · scheduler
+dashboard/      Streamlit — _shared.py (cached DB reads) + Home.py + pages/1..7
+.github/workflows/  ingest-fast.yml (*/30)  ·  ingest-full.yml (0 6,13,21)
+deploy/         Dockerfile, compose, launchd, setup-github.sh, README.md
+```
+
+## Focus Score
+
+```
+focus = conviction_mult · insider_mult · (w_mom·momentum + w_cat·catalyst + w_news·newsflow) − w_risk·risk
+```
+All weights + the event lexicon in `config/settings.yml`. Every input is stored in
+`scores.rationale` (JSON) and rendered on the *Stocks in Focus* decomposition.
+`conviction_mult` = the user's 1–5 watchlist rating. `insider_mult` = cluster
+open-market insider buying.
+
+## Conventions
+
+- **DB is source of truth** for anything the dashboard edits. `config/*.yml` only seed
+  empty tables (`store.seed_from_yaml`, called by `init_db`). Don't reintroduce YAML writes.
+- `bulk_upsert(table, rows, update_only=[...])` for partial-row writes — without
+  `update_only` it overwrites unlisted columns with NULL.
+- Every new ingest source: bounded request count + a wall-clock budget (see `fda.py`,
+  `insiders.py`); fail soft (warn, continue), never abort the whole refresh.
+- Works on SQLite (local) **and** Postgres (cloud) — same schema. Test both mentally;
+  `read_sql` wraps raw strings in `text()`.
+- `uv run pytest -q` before committing. Tests use a tmp SQLite DB and stub the YAML seed.
+- Commit messages end with the Co-Authored-By trailer. Don't push / create PRs unless asked.
+
+## Run locally
+
+```bash
+uv pip install -e ".[dev]"
+uv run bioterm init-db && uv run bioterm universe
+uv run bioterm ingest --limit 40      # fast slice
+uv run bioterm serve                   # localhost:8501
+```

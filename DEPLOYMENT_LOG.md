@@ -47,7 +47,12 @@ runs the rest. Then you do C.
 - [x] Alert **delivery** — `src/bioterm/alerts.py` + `bioterm alerts` (step in ingest-fast). Telegram push if `TELEGRAM_BOT_TOKEN`+`TELEGRAM_CHAT_ID` secrets set; always records to `alerts_fired`. Dashboard Alerts page has firing-now + history tabs.
 - [x] Focus-score history — `score_snapshots` table (one row/ticker/run, 14-day retention). Movers now diff the last snapshot ≥6h old. Sparkline on Stock Detail (shows once ≥2 runs exist).
 - [x] "Refresh data now" button — sidebar button that calls the GitHub `workflow_dispatch` API. Gated on `GH_DISPATCH_TOKEN` (fine-grained PAT, Actions:write on the repo) + `GH_REPO` ("owner/bioterm") secrets. Hidden if unset.
-- [ ] **Insider transactions (SEC Form 4)** — highest-value next item. Plan: new `src/bioterm/ingest/insiders.py`; for the top ~40 focus names + watchlist, pull `submissions` form=="4", fetch each filing's `index.json` → the ownership `.xml`, parse `nonDerivativeTransaction` (code P=buy / S=sell, shares, price, insider name+title). New `insider_txns` table. Feed a "net insider buying (90d)" signal into the risk/score overlay (cluster buying before a catalyst = bullish). Bounded request count. ~1 session.
+- [x] **Insider transactions (SEC Form 4)** — `src/bioterm/ingest/insiders.py` parses
+  the ownership XML (`{dir}/form4.xml`) for watchlist + top-60 focus names; `insider_txns`
+  table; `net_open_market()` rollup; cluster open-market **buying** → `insider_mult`
+  (1.0–1.15) folded into the Focus Score; Stock Detail "👤 Insiders" tab. Live-tested
+  (144 txns / 8 tickers in 16 s). Note: biotech insiders rarely open-market **buy**, so
+  the multiplier is usually 1.0 — which is the point, it only fires on a real signal.
 - [ ] FinBERT sentiment (swap `process/sentiment.py`; ~400 MB model download in the Actions runner — cache it)
 - [ ] LLM extraction of expected-readout dates from full news bodies (needs an LLM API key)
 - [ ] Backtest: replay the score against past biotech moves
@@ -155,13 +160,25 @@ gitignored) with the last 55-ticker refresh in it.
 - **Next:** wait for your steps A + B, run `setup-github.sh`, you do C, verify E.
   Then the backlog — **insider Form 4 first**.
 
+### 2026-09-09 — session 2, insiders (commit `e9e92a6`)
+
+- SEC Form 4 ingestion. `insider_txns` table, `net_open_market()` 90-day rollup.
+- Score: cluster open-market **buying** → `insider_mult` ∈ [1.0, 1.15], multiplies the
+  weighted-components term alongside conviction; recorded in `scores.rationale`.
+- New Stock-Detail tab. `bioterm ingest --only insiders`; in the full pipeline +
+  daily scheduler job. 34 tests total (added parser / rollup / score-lift).
+- 4 new DB tables total this session: `score_snapshots`, `alerts_fired`,
+  `insider_txns` (+ `watchlist`/`manual_catalysts`/`notes`/`app_meta` earlier) →
+  **19 tables**. `bioterm init-db` is idempotent (`create_all` adds only missing
+  tables) and was run against the live local DB.
+
 ### 2026-09-09 — session 2, later: dashboard now has 8 pages + these buttons
 
 | page | interactive bits |
 |---|---|
 | Home | KPIs, focus table, movers, high-signal headlines, next catalysts |
 | Stocks in Focus | filters, **CSV export**, score decomposition, **★ add to watchlist** |
-| Stock Detail | ticker picker, **conviction slider + add/remove watchlist**, **persisted notes**, **Focus-Score history**, **＋ pin a catalyst**, price/pipeline/catalyst/news/filings tabs |
+| Stock Detail | ticker picker, **conviction slider + add/remove watchlist**, **persisted notes**, **Focus-Score history**, **＋ pin a catalyst**, price / pipeline / catalyst / news / **insiders** / filings tabs |
 | Catalyst Calendar | filters, **＋ add / delete manual catalysts**, **CSV export**, month buckets |
 | News Firehose | filters, **watchlist-only toggle**, **CSV export**, **↻ refresh** |
 | Watchlist | **DB-backed editable table**, add rows, save |
