@@ -62,19 +62,21 @@ def scores_df() -> pd.DataFrame:
 
 @st.cache_data(ttl=120)
 def prev_scores_df(min_age_hours: int = 6) -> pd.DataFrame:
-    """The score snapshot to diff 'movers' against: the most recent run that is at
-    least `min_age_hours` old (so a burst of runs doesn't zero out the deltas)."""
-    runs = q("SELECT DISTINCT ts FROM score_snapshots ORDER BY ts DESC")
-    if not runs.empty:
-        runs["ts"] = pd.to_datetime(runs["ts"], utc=True)
-        cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=min_age_hours)
-        older = runs[runs["ts"] <= cutoff]
-        pick = (older.iloc[0]["ts"] if not older.empty
-                else (runs.iloc[1]["ts"] if len(runs) > 1 else None))
-        if pick is not None:
-            return q("SELECT ticker, focus_score, rank FROM score_snapshots "
-                     "WHERE ts = :t", {"t": pick.to_pydatetime()})
-    # fallback: previous asof in the scores table
+    """The score snapshot to diff 'movers' against: the most recent run at least
+    `min_age_hours` old, else the second-most-recent run. All ts comparison stays
+    in the DB (avoids naive/aware timestamp mismatches)."""
+    cutoff = (pd.Timestamp.now("UTC") - pd.Timedelta(hours=min_age_hours)).strftime(
+        "%Y-%m-%d %H:%M:%S")
+    df = q(
+        "SELECT ticker, focus_score, rank FROM score_snapshots WHERE ts = "
+        "(SELECT ts FROM score_snapshots WHERE ts <= :c GROUP BY ts "
+        " ORDER BY ts DESC LIMIT 1)", {"c": cutoff})
+    if df.empty:
+        df = q("SELECT ticker, focus_score, rank FROM score_snapshots WHERE ts = "
+               "(SELECT DISTINCT ts FROM score_snapshots ORDER BY ts DESC "
+               " LIMIT 1 OFFSET 1)")
+    if not df.empty:
+        return df
     asofs = q("SELECT DISTINCT asof FROM scores ORDER BY asof DESC LIMIT 2")
     if len(asofs) < 2:
         return pd.DataFrame(columns=["ticker", "focus_score", "rank"])
