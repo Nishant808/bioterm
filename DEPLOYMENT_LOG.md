@@ -5,55 +5,44 @@ A running journal so anyone (you, or a fresh Claude session) can resume instantl
 
 ---
 
-## ⏯️ RESUME HERE  (session 3 — DEPLOYING NOW)
+## ✅ DEPLOYED  (session 3)  —  https://bioterm.streamlit.app/
 
-**Live state:**
-- **Neon Postgres** connected + loaded with the full 161-ticker dataset
-  (`bioterm import-sqlite`). Project `lingering-leaf-70821008`, branch `production`,
-  pooled endpoint `ep-curly-thunder-b2tm2nhm-pooler.c-6.eu-central-1`. **The DB URL is
-  a GitHub Actions secret + goes in Streamlit secrets — it is NOT in the repo.**
-- **GitHub repo (PRIVATE): https://github.com/Nishant808/bioterm** — pushed, secrets
-  `DATABASE_URL` + `SEC_UA` set. Crons tuned for the 2000-min/mo free tier
-  (`ingest-fast` every 2h 11-23 UTC, `ingest-full` daily 09:00 UTC).
-- **Workflow debugging (2 CI-only bugs found + fixed):**
-  1. `uv pip install --system` → runner python is PEP-668 externally-managed →
-     switched both workflows to `uv sync --no-dev` + `uv run`. ✅ `ingest-fast`
-     then went green (4m17s).
-  2. `bulk_upsert` on Postgres → psycopg caps bound params at **65535/statement**;
-     `news` (~6000 rows × 13 cols) and `clinical_trials` (~5800 × 16) overflowed.
-     SQLite had tolerated it. Fixed: `bulk_upsert` chunks by `60000/ncols`, and
-     `_clean_rows` dedups a batch on its PK (so `ON CONFLICT DO UPDATE` can't hit a
-     row twice). Verified with an 8000-row upsert on Neon. **Neither bug is
-     reachable locally on SQLite — only surfaced against real Postgres.**
-- Dashboard verified rendering against the real Neon DB (all 8 pages).
-- Re-triggered `ingest-full` on the fixed code (run 34389471426) — watching to
-  completion. Old runs cancelled. NOTE: fast+full share a `concurrency` group, so
-  queuing both at once drops the older pending one — trigger them one at a time,
-  or just let the schedule run fast.
-
-**What's left:**
-| step | who | status |
+| piece | where | status |
 |---|---|---|
-| Actions runs go green | Claude (watching) | 🔄 in progress |
-| **Deploy on Streamlit Community Cloud** | **YOU** — see "Your manual steps" below | ⛔ |
-| final smoke test (dashboard on Streamlit Cloud shows live data) | Claude + you | ⛔ |
+| **Dashboard** | **https://bioterm.streamlit.app/** (Streamlit Community Cloud) | ✅ live — Home / Stock Detail / Alerts / News Firehose / Compare all verified in-browser |
+| **Database** | **Neon Postgres** — project `lingering-leaf-70821008`, pooled endpoint `ep-curly-thunder-b2tm2nhm-pooler.c-6.eu-central-1`, full 161-ticker dataset loaded | ✅ |
+| **Ingestion** | **GitHub Actions**, private repo `Nishant808/bioterm` — `ingest-fast` every 2h (11-23 UTC), `ingest-full` daily 09:00 UTC. ~1650 min/mo (inside the 2000 free) | ✅ `ingest-fast` green (4m17s); `ingest-full` re-run verifying the param fix |
+| **Secrets** | Actions: `DATABASE_URL`, `SEC_UA`. Streamlit: same two. **DB URL is never in the repo.** | ✅ |
 
-### Your manual step — Streamlit Community Cloud (~3 min)
+Nothing runs on the Mac. Update the code: `git push` → Streamlit Cloud auto-redeploys
+the dashboard; the next Actions cron picks up pipeline changes.
 
-1. **<https://share.streamlit.io>** → sign in with GitHub → **authorize access to your
-   private repos** (it'll ask).
-2. **New app** → repo `Nishant808/bioterm`, branch `main`, main file `dashboard/Home.py`.
-3. **Advanced settings** → Python version **3.12**.
-4. **Secrets** box — paste exactly:
-   ```
-   DATABASE_URL = "postgresql+psycopg://neondb_owner:npg_Al9Cg1moaQNw@ep-curly-thunder-b2tm2nhm-pooler.c-6.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
-   BIOTERM_SEC_USER_AGENT = "BioTerm/0.1 (nishantthalwal@gmail.com)"
-   ```
-5. **Deploy.** Data shows immediately (Neon is already populated). Send me the app URL.
+### Two CI-only bugs found & fixed (SQLite never showed them)
 
-Optional later: add `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` (Actions secrets) for
-alert push; add `GH_DISPATCH_TOKEN` + `GH_REPO=Nishant808/bioterm` (Streamlit secrets)
-for the in-dashboard "↻ refresh now" button.
+1. `uv pip install --system` — GitHub runner python is PEP-668 externally-managed →
+   both workflows now use `uv sync --no-dev` + `uv run`.
+2. `bulk_upsert` overflowed psycopg's **65 535 bound-param/statement** cap on the
+   `news` (~6 000×13) and `clinical_trials` (~5 800×16) batches → `bulk_upsert` now
+   chunks by `60000/ncols`; `_clean_rows` dedups a batch on its PK.
+
+### Optional add-ons (not set up)
+
+- **Alert push** — `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` as **Actions** secrets
+  (`gh secret set …`). BotFather → token; DM the bot, read chat id from
+  `api.telegram.org/bot<token>/getUpdates`.
+- **"↻ refresh now" button** — `GH_DISPATCH_TOKEN` (fine-grained PAT, *Actions:write*)
+  + `GH_REPO="Nishant808/bioterm"` as **Streamlit** secrets.
+- **Public repo** (unlimited Actions minutes) — `gh repo edit --visibility public`
+  then widen the crons (comments in each workflow file show how).
+
+### Notes
+
+- `bioterm import-sqlite <path>` (new CLI cmd) did the local SQLite → Neon copy
+  (truncate + bulk-load + reset PG serial sequences). Not needed again.
+- fast + full workflows share a `concurrency` group — queuing both at once drops the
+  older pending one. Trigger one at a time, or just let the schedule run.
+- `.devcontainer/` was added by the user (GitHub "add dev container" — the standard
+  Streamlit template). Harmless; enables Codespaces.
 
 ---
 
