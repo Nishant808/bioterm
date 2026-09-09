@@ -17,7 +17,8 @@ if str(_SRC) not in sys.path:
 # On Streamlit Community Cloud the DB URL comes in via st.secrets, not the env.
 # Bridge it into the environment *before* bioterm.config reads it.
 try:
-    for _k in ("DATABASE_URL", "BIOTERM_SEC_USER_AGENT"):
+    for _k in ("DATABASE_URL", "BIOTERM_SEC_USER_AGENT", "GH_DISPATCH_TOKEN",
+               "GH_REPO", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
         if _k in st.secrets and _k not in os.environ:
             os.environ[_k] = str(st.secrets[_k])
 except Exception:  # noqa: BLE001 - no secrets file locally is fine
@@ -202,15 +203,45 @@ def disclaimer() -> None:
     )
 
 
+def trigger_workflow(which: str = "ingest-fast.yml") -> tuple[bool, str]:
+    """Fire a GitHub Actions workflow_dispatch. Needs GH_DISPATCH_TOKEN + GH_REPO
+    ('owner/repo') in secrets/env; returns (ok, message)."""
+    import os
+
+    import requests
+
+    token = os.environ.get("GH_DISPATCH_TOKEN")
+    repo = os.environ.get("GH_REPO")
+    if not token or not repo:
+        return False, "set GH_DISPATCH_TOKEN + GH_REPO secrets to enable this"
+    try:
+        r = requests.post(
+            f"https://api.github.com/repos/{repo}/actions/workflows/{which}/dispatches",
+            headers={"Authorization": f"Bearer {token}",
+                     "Accept": "application/vnd.github+json"},
+            json={"ref": "main"}, timeout=15)
+        if r.status_code == 204:
+            return True, f"{which} dispatched — data updates in a few minutes"
+        return False, f"GitHub returned {r.status_code}: {r.text[:200]}"
+    except Exception as exc:  # noqa: BLE001
+        return False, str(exc)
+
+
 def sidebar_freshness() -> None:
     stt = ingest_status()
     if stt.empty:
         st.sidebar.info("No ingest runs yet. Run `bioterm ingest`.")
-        return
-    last = pd.to_datetime(stt["finished_at"]).max()
-    st.sidebar.caption(f"data as of **{last:%Y-%m-%d %H:%M} UTC**")
-    # flag only jobs whose *most recent* run errored
-    latest = stt.sort_values("started_at").groupby("job").last()
-    errs = latest[latest["status"] == "error"].index.tolist()
-    if errs:
-        st.sidebar.warning("latest run failed for: " + ", ".join(errs))
+    else:
+        last = pd.to_datetime(stt["finished_at"]).max()
+        st.sidebar.caption(f"data as of **{last:%Y-%m-%d %H:%M} UTC**")
+        latest = stt.sort_values("started_at").groupby("job").last()
+        errs = latest[latest["status"] == "error"].index.tolist()
+        if errs:
+            st.sidebar.warning("latest run failed for: " + ", ".join(errs))
+
+    import os
+
+    if os.environ.get("GH_DISPATCH_TOKEN") and os.environ.get("GH_REPO"):
+        if st.sidebar.button("↻ refresh data now"):
+            ok, msg = trigger_workflow("ingest-fast.yml")
+            (st.sidebar.success if ok else st.sidebar.error)(msg)

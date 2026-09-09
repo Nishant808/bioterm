@@ -42,16 +42,17 @@ runs the rest. Then you do C.
 | C | **Streamlit Cloud app deployed + secrets set** | **YOU** (needs D) | ⛔ |
 | E | Verify: Actions run green → data in Neon → dashboard shows it | Claude + you | ⛔ |
 
-### After deploy — feature backlog (build with remaining credits)
+### Feature backlog (build with remaining credits)
 
-- [ ] Alert **delivery** (email via a `notify` GitHub Action step, or Telegram bot) reading `app_meta.alert_rules`
-- [ ] "Trigger refresh now" button in the dashboard → `gh workflow run` via a GitHub token (or a tiny webhook)
-- [ ] FinBERT sentiment (swap `process/sentiment.py`)
-- [ ] LLM extraction of expected-readout dates from full news bodies
-- [ ] Focus-score history table (intraday movers, not just day-over-day)
+- [x] Alert **delivery** — `src/bioterm/alerts.py` + `bioterm alerts` (step in ingest-fast). Telegram push if `TELEGRAM_BOT_TOKEN`+`TELEGRAM_CHAT_ID` secrets set; always records to `alerts_fired`. Dashboard Alerts page has firing-now + history tabs.
+- [x] Focus-score history — `score_snapshots` table (one row/ticker/run, 14-day retention). Movers now diff the last snapshot ≥6h old. Sparkline on Stock Detail (shows once ≥2 runs exist).
+- [x] "Refresh data now" button — sidebar button that calls the GitHub `workflow_dispatch` API. Gated on `GH_DISPATCH_TOKEN` (fine-grained PAT, Actions:write on the repo) + `GH_REPO` ("owner/bioterm") secrets. Hidden if unset.
+- [ ] **Insider transactions (SEC Form 4)** — highest-value next item. Plan: new `src/bioterm/ingest/insiders.py`; for the top ~40 focus names + watchlist, pull `submissions` form=="4", fetch each filing's `index.json` → the ownership `.xml`, parse `nonDerivativeTransaction` (code P=buy / S=sell, shares, price, insider name+title). New `insider_txns` table. Feed a "net insider buying (90d)" signal into the risk/score overlay (cluster buying before a catalyst = bullish). Bounded request count. ~1 session.
+- [ ] FinBERT sentiment (swap `process/sentiment.py`; ~400 MB model download in the Actions runner — cache it)
+- [ ] LLM extraction of expected-readout dates from full news bodies (needs an LLM API key)
 - [ ] Backtest: replay the score against past biotech moves
-- [ ] Per-molecule tracking (link watchlist `molecules` → specific NCT ids)
-- [ ] Insider-transaction (SEC Form 4) + 13F ingestion
+- [ ] Per-molecule tracking (link watchlist `molecules` → specific NCT ids / catalysts)
+- [ ] 13F holdings changes (whalewisdom-style, from SEC 13F-HR)
 
 ### Local dev
 
@@ -142,6 +143,28 @@ gitignored) with the last 55-ticker refresh in it.
   read it fine. `store` writes (watchlist add/remove, note, manual catalyst, meta)
   all round-tripped. Tore the container down; Docker Desktop quit; local SQLite
   untouched. **The cloud data path is proven — Neon will "just work".**
-- Commits: `84d7599` (MVP), `925252b` (deploy prep + features), next commit = log + docs.
-- **Next:** wait for your steps A + B, then run `setup-github.sh`, then you do C,
-  then verify E. Meanwhile continuing on the feature backlog.
+- **Feature pass 2** (commit `7908c97`): alerts engine (`src/bioterm/alerts.py`,
+  `bioterm alerts`, wired into `ingest-fast.yml`), `alerts_fired` + `score_snapshots`
+  tables, Telegram delivery hook (credential-gated), movers via snapshots, Focus-Score
+  history sparkline, Alerts page firing/history tabs.
+- **Feature pass 3** (this commit): dashboard "↻ refresh data now" sidebar button →
+  GitHub `workflow_dispatch` API (gated on `GH_DISPATCH_TOKEN` + `GH_REPO` secrets;
+  hidden otherwise). Extended the `st.secrets`→env bridge.
+- Commits: `84d7599` MVP · `925252b` deploy prep + features · `246fa73` deploy docs +
+  Postgres test · `7908c97` alerts + score history · (next) refresh button + backlog.
+- **Next:** wait for your steps A + B, run `setup-github.sh`, you do C, verify E.
+  Then the backlog — **insider Form 4 first**.
+
+### 2026-09-09 — session 2, later: dashboard now has 8 pages + these buttons
+
+| page | interactive bits |
+|---|---|
+| Home | KPIs, focus table, movers, high-signal headlines, next catalysts |
+| Stocks in Focus | filters, **CSV export**, score decomposition, **★ add to watchlist** |
+| Stock Detail | ticker picker, **conviction slider + add/remove watchlist**, **persisted notes**, **Focus-Score history**, **＋ pin a catalyst**, price/pipeline/catalyst/news/filings tabs |
+| Catalyst Calendar | filters, **＋ add / delete manual catalysts**, **CSV export**, month buckets |
+| News Firehose | filters, **watchlist-only toggle**, **CSV export**, **↻ refresh** |
+| Watchlist | **DB-backed editable table**, add rows, save |
+| Compare | 2–4 ticker rebased price overlay + side-by-side metrics + catalyst list |
+| Alerts | **editable rules (persisted)**, firing-now tab, **history tab w/ delivery status** |
+| sidebar (all pages) | data-freshness, **↻ refresh data now** (if GH secrets set) |
