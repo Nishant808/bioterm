@@ -1,0 +1,49 @@
+# Bundled seed universe: large-cap pharma + major biotech that anchor the sector.
+# Used when universe.use_seed is true. ETF holdings (XBI/IBB) are added on top.
+
+seed:
+  # Big pharma
+  - {ticker: JNJ,  name: "Johnson & Johnson"}
+  - {ticker: PFE,  name: "Pfizer"}
+  - {ticker: MRK,  name: "Merck & Co"}
+  - {ticker: ABBV, name: "AbbVie"}
+  - {ticker: LLY,  name: "Eli Lilly"}
+  - {ticker: BMY,  name: "Bristol-Myers Squibb"}
+  - {ticker: AZN,  name: "AstraZeneca"}
+  - {ticker: NVS,  name: "Novartis"}
+  - {ticker: NVO,  name: "Novo Nordisk"}
+  - {ticker: GSK,  name: "GSK"}
+  - {ticker: SNY,  name: "Sanofi"}
+  - {ticker: TAK,  name: "Takeda"}
+  # Large-cap biotech
+  - {ticker: AMGN, name: "Amgen"}
+  - {ticker: GILD, name: "Gilead Sciences"}
+  - {ticker: REGN, name: "Regeneron"}
+  - {ticker: VRTX, name: "Vertex Pharmaceuticals"}
+  - {ticker: BIIB, name: "Biogen"}
+  - {ticker: MRNA, name: "Moderna"}
+  - {ticker: BNTX, name: "BioNTech"}
+  - {ticker: ILMN, name: "Illumina"}
+  - {ticker: INCY, name: "Incyte"}
+  - {ticker: BMRN, name: "BioMarin"}
+  - {ticker: ALNY, name: "Alnylam"}
+  - {ticker: NBIX, name: "Neurocrine Biosciences"}
+  - {ticker: EXEL, name: "Exelixis"}
+  - {ticker: JAZZ, name: "Jazz Pharmaceuticals"}
+  - {ticker: UTHR, name: "United Therapeutics"}
+  - {ticker: HALO, name: "Halozyme"}
+  # Mid-cap / catalyst-rich
+  - {ticker: SRPT, name: "Sarepta Therapeutics"}
+  - {ticker: CRSP, name: "CRISPR Therapeutics"}
+  - {ticker: NTLA, name: "Intellia Therapeutics"}
+  - {ticker: BEAM, name: "Beam Therapeutics"}
+  - {ticker: ARWR, name: "Arrowhead Pharmaceuticals"}
+  - {ticker: IONS, name: "Ionis Pharmaceuticals"}
+  - {ticker: RARE, name: "Ultragenyx"}
+  - {ticker: MDGL, name: "Madrigal Pharmaceuticals"}
+  - {ticker: VKTX, name: "Viking Therapeutics"}
+  - {ticker: CYTK, name: "Cytokinetics"}
+  - {ticker: KRYS, name: "Krystal Biotech"}
+  - {ticker: AXSM, name: "Axsome Therapeutics"}
+  - {ticker: IMVT, name: "Immunovant"}
+  - {ticker: ARDX, name: "Ardelyx"}

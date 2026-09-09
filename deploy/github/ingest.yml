@@ -1,0 +1,52 @@
+# GitHub Actions - free "always-on" ingestion cron.
+#
+# Copy this to  .github/workflows/ingest.yml  in a repo that holds BioTerm.
+# It runs the pipeline on a schedule and pushes results to a shared Postgres
+# (Neon / Supabase free tier). The Streamlit dashboard - deployed on Streamlit
+# Community Cloud - reads the same DATABASE_URL and is therefore always current
+# without you running anything locally.
+#
+# Setup:
+#   1. Create a free Postgres at neon.tech (or supabase.com). Copy its connection
+#      string (postgresql://...).  In GitHub: Settings -> Secrets and variables ->
+#      Actions -> New repository secret:
+#         DATABASE_URL = postgresql+psycopg://user:pass@host/db?sslmode=require
+#         SEC_UA       = "BioTerm/0.1 (you@example.com)"
+#   2. On Streamlit Community Cloud, deploy dashboard/Home.py and set the same
+#      DATABASE_URL in the app's Secrets.
+#   3. Commit this file. Done - ingestion runs every 20 min, dashboard is live 24/7.
+
+name: bioterm-ingest
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"     # every 20 minutes (GitHub may delay under load)
+  workflow_dispatch: {}         # manual "Run workflow" button
+
+concurrency:
+  group: bioterm-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install BioTerm
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Run pipeline
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BIOTERM_SEC_USER_AGENT: ${{ secrets.SEC_UA }}
+        run: |
+          bioterm init-db
+          bioterm ingest        # full universe; drop to --limit N if you hit the timeout

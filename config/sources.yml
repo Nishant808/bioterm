@@ -1,0 +1,28 @@
+# News feeds. All are publisher-provided RSS/Atom (no signup). Add/remove freely.
+# `scope: sector` feeds are scanned for any universe ticker/company mention.
+# Per-ticker Google News queries are generated automatically (see settings.ingest).
+
+feeds:
+  - name: "FierceBiotech"
+    url: "https://www.fiercebiotech.com/rss/xml"
+    scope: sector
+  - name: "FiercePharma"
+    url: "https://www.fiercepharma.com/rss/xml"
+    scope: sector
+  - name: "BioPharma Dive"
+    url: "https://www.biopharmadive.com/feeds/news/"
+    scope: sector
+  - name: "STAT News - Pharma"
+    url: "https://www.statnews.com/category/pharma/feed/"
+    scope: sector
+  - name: "STAT News - Biotech"
+    url: "https://www.statnews.com/category/biotech/feed/"
+    scope: sector
+  - name: "FDA Press Announcements"
+    url: "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/press-releases/rss.xml"
+    scope: sector
+  - name: "Google News - biotech FDA"
+    url: "https://news.google.com/rss/search?q=biotech%20(FDA%20OR%20%22phase%203%22%20OR%20topline)%20when%3A7d&hl=en-US&gl=US&ceid=US:en"
+    scope: sector
+  # Endpoints News (endpts.com) and some Fierce sub-feeds block non-browser RSS clients (403) - omitted.
+  # SEC 8-K filings are ingested directly via ingest/edgar.py, not RSS.

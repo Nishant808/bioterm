@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS always-on worker (while the Mac is awake).
+
+    cp deploy/launchd/com.bioterm.worker.plist ~/Library/LaunchAgents/
+    # edit the paths below to match your checkout, then:
+    launchctl load ~/Library/LaunchAgents/com.bioterm.worker.plist
+    launchctl start com.bioterm.worker
+    # stop: launchctl unload ~/Library/LaunchAgents/com.bioterm.worker.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.bioterm.worker</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/nishantthalwal/Desktop/cld/.venv/bin/bioterm</string>
+        <string>scheduler</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/nishantthalwal/Desktop/cld</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>BIOTERM_SEC_USER_AGENT</key>
+        <string>BioTerm/0.1 (nishantthalwal@gmail.com)</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/nishantthalwal/Desktop/cld/data/worker.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/nishantthalwal/Desktop/cld/data/worker.err.log</string>
+</dict>
+</plist>

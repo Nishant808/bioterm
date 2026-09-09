@@ -1,0 +1,40 @@
+# BioTerm - always-on deployment on a small VPS.
+#   cd deploy && docker compose up -d --build
+#
+# `worker`    runs the ingestion scheduler (news q15m, market q30m, pipeline daily)
+# `dashboard` serves the Streamlit UI on :8501
+# Both share the same SQLite file on the `bioterm-data` volume.
+#
+# To move to Postgres instead (recommended for cloud): add a `db:` service or use a
+# managed Postgres, then set DATABASE_URL=postgresql+psycopg://... on both services.
+
+services:
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["bioterm", "scheduler"]
+    environment:
+      DATABASE_URL: sqlite:////data/bioterm.db
+      BIOTERM_SEC_USER_AGENT: "BioTerm/0.1 (you@example.com)"
+      TZ: UTC
+    volumes:
+      - bioterm-data:/data
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      DATABASE_URL: sqlite:////data/bioterm.db
+    volumes:
+      - bioterm-data:/data
+    depends_on:
+      - worker
+    restart: unless-stopped
+
+volumes:
+  bioterm-data:

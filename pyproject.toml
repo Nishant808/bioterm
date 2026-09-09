@@ -1,0 +1,43 @@
+[project]
+name = "bioterm"
+version = "0.1.0"
+description = "Open-source biotech/pharma catalyst-monitoring terminal (6-month swing horizon)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "sqlalchemy>=2.0",
+    "yfinance>=0.2.40",
+    "pandas>=2.1",
+    "numpy>=1.26",
+    "requests>=2.31",
+    "feedparser>=6.0",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+    "vaderSentiment>=3.3.2",
+    "apscheduler>=3.10",
+    "streamlit>=1.36",
+    "plotly>=5.22",
+    "pyyaml>=6.0",
+    "typer>=0.12",
+    "rich>=13.0",
+    "python-dateutil>=2.9",
+    "openpyxl>=3.1",
+    "tenacity>=8.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-mock>=3.14"]
+
+[project.scripts]
+bioterm = "bioterm.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bioterm"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

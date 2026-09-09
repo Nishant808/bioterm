@@ -1,0 +1,21 @@
+# --- BioTerm ---
+.venv/
+data/
+*.db
+*.sqlite
+*.sqlite3
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.streamlit/secrets.toml
+dist/
+build/
+*.egg-info/
+
+# --- Pre-existing large R artifacts in this directory (not part of BioTerm) ---
+.RData
+.RDataTmp
+.Rapp.history
+.Rhistory
+.DS_Store

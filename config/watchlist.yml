@@ -1,0 +1,35 @@
+# Your personal watchlist. Edit freely (the Watchlist dashboard page also writes here).
+#
+# Each entry:
+#   ticker:      required, Yahoo/US exchange symbol
+#   conviction:  1-5, YOUR judgement on the pipeline (5 = high conviction the science works)
+#   thesis:      free text - why you're watching it
+#   molecules:   optional list of assets/programs you care about (shown on the detail page)
+#
+# conviction feeds a multiplier on the Focus Score (see config/settings.yml -> score.conviction_map)
+
+watchlist:
+  - ticker: MRNA
+    conviction: 3
+    thesis: "mRNA platform beyond COVID - RSV, flu combo, oncology (INT/mRNA-4157 with MRK)"
+    molecules: ["mRNA-1010 (flu)", "mRNA-1345 (RSV)", "mRNA-4157/V940 (melanoma)"]
+
+  - ticker: VRTX
+    conviction: 4
+    thesis: "CF cash engine funding vanza (pain, non-opioid) and casgevy ramp; VX-880 T1D"
+    molecules: ["suzetrigine (VX-548)", "VX-880 (T1D)", "inaxaplin (APOL1 kidney)"]
+
+  - ticker: CRSP
+    conviction: 3
+    thesis: "casgevy commercial ramp with VRTX; in vivo editing + cell therapy pipeline"
+    molecules: ["CTX112 (CAR-T)", "CTX310 (ANGPTL3, in vivo)"]
+
+  - ticker: SRPT
+    conviction: 2
+    thesis: "DMD gene therapy franchise (Elevidys) - watch safety signal + label expansion"
+    molecules: ["ELEVIDYS (delandistrogene)", "SRP-9003 (LGMD)"]
+
+  - ticker: BEAM
+    conviction: 3
+    thesis: "base editing - sickle cell (BEAM-101) and in vivo liver programs"
+    molecules: ["BEAM-101 (SCD)", "BEAM-302 (AATD)"]

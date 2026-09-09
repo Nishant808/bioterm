@@ -1,0 +1,20 @@
+# Manually pinned catalysts - dates you know from your own research that the
+# automated sources can't reliably extract (PDUFA dates, ODAC/AdCom dates,
+# conference presentations, expected topline windows).
+#
+# Each entry:
+#   ticker:  required
+#   type:    one of: pdufa, adcom, phase3_readout, phase2_readout, phase1_readout,
+#            fda_action, data_presentation, earnings, other
+#   date:    YYYY-MM-DD  (use the first day of the month/quarter if only approximate)
+#   title:   short description
+#   confidence: high | medium | low
+#   url:     optional source link
+
+catalysts: []
+  # - ticker: MDGL
+  #   type: fda_action
+  #   date: 2026-10-15
+  #   title: "Rezdiffra label expansion decision (compensated cirrhosis)"
+  #   confidence: medium
+  #   url: ""
