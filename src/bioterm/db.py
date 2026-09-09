@@ -320,6 +320,7 @@ def init_db(seed: bool = True) -> list[str]:
 
 def _clean_rows(table: Table, rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     cols = set(table.c.keys())
+    pk_cols = [c.name for c in table.primary_key.columns]
     cleaned_rows: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
     for r in rows:
@@ -329,9 +330,14 @@ def _clean_rows(table: Table, rows: Iterable[dict[str, Any]]) -> list[dict[str, 
                 cleaned[k] = None
         cleaned_rows.append(cleaned)
         seen_keys.update(cleaned.keys())
-    # SQLAlchemy multi-VALUES insert needs a consistent key set across all rows
-    out = [{k: r.get(k) for k in seen_keys} for r in cleaned_rows]
-    return out
+    # consistent key set across all rows (multi-VALUES insert needs it)
+    normalised = [{k: r.get(k) for k in seen_keys} for r in cleaned_rows]
+    # dedup within the batch on the PK (last wins) - ON CONFLICT DO UPDATE cannot
+    # touch the same target row twice in one statement
+    if all(pk in seen_keys for pk in pk_cols) and pk_cols:
+        by_pk = {tuple(r[pk] for pk in pk_cols): r for r in normalised}
+        normalised = list(by_pk.values())
+    return normalised
 
 
 def bulk_upsert(
@@ -359,18 +365,26 @@ def bulk_upsert(
     else:  # pragma: no cover - fallback: naive delete+insert
         return _fallback_upsert(engine, table, rows, pk_cols)
 
+    # both psycopg (Postgres) and sqlite cap bound parameters per statement
+    # (65535 / 32766). Chunk so a big batch (news, clinical_trials, filings) fits.
+    ncols = max(1, len(rows[0]))
+    limit = 60000 if dialect.startswith("postgre") else 30000
+    chunk = max(1, min(5000, limit // ncols))
+
     allowed = set(update_only) if update_only else None
     with engine.begin() as conn:
-        stmt = _insert(table).values(rows)
-        # NB: subscript, not getattr - a column named 'items'/'keys'/'values'
-        # would otherwise resolve to the collection's method.
-        update_cols = {
-            c.name: stmt.excluded[c.name]
-            for c in table.c
-            if c.name not in pk_cols and (allowed is None or c.name in allowed)
-        }
-        stmt = stmt.on_conflict_do_update(index_elements=pk_cols, set_=update_cols)
-        conn.execute(stmt)
+        for i in range(0, len(rows), chunk):
+            batch = rows[i:i + chunk]
+            stmt = _insert(table).values(batch)
+            # NB: subscript, not getattr - a column named 'items'/'keys'/'values'
+            # would otherwise resolve to the collection's method.
+            update_cols = {
+                c.name: stmt.excluded[c.name]
+                for c in table.c
+                if c.name not in pk_cols and (allowed is None or c.name in allowed)
+            }
+            stmt = stmt.on_conflict_do_update(index_elements=pk_cols, set_=update_cols)
+            conn.execute(stmt)
     return len(rows)
 
 
