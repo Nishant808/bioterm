@@ -5,12 +5,24 @@ A running journal so anyone (you, or a fresh Claude session) can resume instantl
 
 ---
 
-## ⏯️ RESUME HERE
+## ⏯️ RESUME HERE  (end of session 2)
 
-**Where we are:** MVP is built and green. All cloud plumbing is written and committed.
-The project is a standalone git repo at `~/Desktop/cld` (2 commits, no remote yet).
-Blocked on **4 account-gated steps only you can do** (below). Once step A + B are done,
-a Claude session can run `bash deploy/setup-github.sh` and finish the GitHub side.
+**Where we are:** MVP + feature passes done and green (34 tests). All cloud plumbing
+written and committed — **9 commits** on a standalone git repo at `~/Desktop/cld`,
+**no remote yet**. Local SQLite DB holds a full 161-ticker refresh (79k prices, 5.8k
+trials, 6.3k news, 2k insider txns, 682 catalysts). Local Streamlit server **stopped**.
+
+**Blocked on you:** step **A** (Neon Postgres) + step **B** (`gh auth login`). Then a
+Claude session runs `bash deploy/setup-github.sh` (step D) and you do step **C**
+(Streamlit Cloud). Nothing else is in the way — the Postgres path is live-tested.
+
+### To resume in a fresh session, paste this:
+
+> Continue the BioTerm deploy — read DEPLOYMENT_LOG.md. Neon URL is `<paste>`, and I've
+> run `gh auth login`. Run deploy/setup-github.sh and tell me the Streamlit Cloud steps.
+
+If you haven't done A/B yet, the fresh session can still work the feature backlog
+(insider Form 4 is done; next is alert email delivery or FinBERT).
 
 ### The 4 things only YOU can do (Claude cannot create accounts / auth as you)
 
@@ -36,6 +48,8 @@ runs the rest. Then you do C.
 | 6 | `deploy/setup-github.sh` one-shot | Claude | ✅ |
 | 7 | Dashboard feature pass (buttons, exports, Compare, Alerts, notes) | Claude | ✅ commit `925252b` — 8 pages, all verified rendering |
 | 8 | `gh` CLI installed | Claude | ✅ `/opt/homebrew/bin/gh` v2.100 |
+| 9 | Alerts engine + Telegram hook + `score_snapshots` (movers) + Form 4 insiders + HTTP hardening | Claude | ✅ commits `7908c97` `1e7cc1f` `e9e92a6` `3bda06b` `19e363b` |
+| 10 | Full 161-ticker local refresh (validates every stage at scale) | Claude | ✅ fda budget stops cleanly at 73/161; everything else full |
 | A | **Neon Postgres created** | **YOU** | ⛔ |
 | B | **`gh auth login`** | **YOU** | ⛔ |
 | D | repo create + push + secrets + first run (`setup-github.sh`) | Claude (needs A+B) | ⛔ |
@@ -171,6 +185,21 @@ gitignored) with the last 55-ticker refresh in it.
   `insider_txns` (+ `watchlist`/`manual_catalysts`/`notes`/`app_meta` earlier) →
   **19 tables**. `bioterm init-db` is idempotent (`create_all` adds only missing
   tables) and was run against the live local DB.
+
+### 2026-09-09 — session 2, full-scale local refresh + fixes (commit `19e363b`)
+
+- `bioterm ingest --preset full` over all 161 tickers: prices 79 723 · technicals
+  63 717 · EDGAR 5 976 filings · fundamentals 161 (127 w/ runway) · clinical 5 798
+  trials · **fda hit its 180 s budget at 73/161 sponsors and stopped cleanly**
+  (399 events — the hardening works; upserts accumulate over runs) · insiders 2 005
+  txns / 60 tickers · news 6 228 · catalysts 682 · scores 161.
+- **Insider signal is live and finding real things:** SMMT $99.97 M open-market
+  buying by 2 insiders → `insider_mult` 1.15; CGON $24.8 M → 1.13; ALT $44 k → 1.04.
+- Fixed `prev_scores_df` (movers): the timestamp match must stay in-DB — a
+  tz-aware Python Timestamp stringified to `…+00:00` never matched the naive stored
+  value. Movers now render.
+- Top focus after the full refresh: BHVN, IDYA, EXEL, ROIV, VRTX, QURE, TGTX, SRRK,
+  INCY, VIR — catalyst-rich mid-caps, exactly the target profile.
 
 ### 2026-09-09 — session 2, later: dashboard now has 8 pages + these buttons
 
