@@ -128,6 +128,50 @@ def alerts(
         console.print(f"{icon} [bold]{a['ticker']}[/bold] {a['kind']}: {a['detail']}")
 
 
+@app.command("import-sqlite")
+def import_sqlite(
+    src: str = typer.Argument("data/bioterm.db", help="path to the local SQLite file"),
+) -> None:
+    """Copy a local SQLite DB into the DATABASE_URL target (e.g. a fresh Neon Postgres).
+
+    Truncates each destination table first, then bulk-loads, then fixes the
+    autoincrement sequences. Idempotent.
+    """
+    import pandas as pd
+    import sqlalchemy as sa
+
+    from .db import get_engine, init_db, metadata
+
+    init_db(seed=False)
+    dst = get_engine()
+    src_eng = sa.create_engine(f"sqlite:///{src}")
+    order = [t.name for t in metadata.sorted_tables]
+    for name in order:
+        try:
+            df = pd.read_sql_table(name, src_eng)
+        except Exception:  # noqa: BLE001
+            console.print(f"  {name}: [dim]not in source[/dim]")
+            continue
+        with dst.begin() as conn:
+            conn.exec_driver_sql(f"DELETE FROM {name}")
+        if df.empty:
+            console.print(f"  {name}: 0")
+            continue
+        chunk = max(1, min(2000, 60000 // max(1, df.shape[1])))
+        df.to_sql(name, dst, if_exists="append", index=False, chunksize=chunk,
+                  method="multi")
+        console.print(f"  {name}: [green]{len(df)}[/green]")
+    # reset serial sequences on Postgres
+    if dst.dialect.name.startswith("postgre"):
+        with dst.begin() as conn:
+            for name in ("score_snapshots", "ingest_runs"):
+                conn.exec_driver_sql(
+                    f"SELECT setval(pg_get_serial_sequence('{name}','id'), "
+                    f"COALESCE((SELECT MAX(id) FROM {name}),1), true)")
+        console.print("  [dim]postgres sequences reset[/dim]")
+    console.print("[green]import complete[/green]")
+
+
 @app.command()
 def status() -> None:
     """Show recent ingest runs and table row counts."""

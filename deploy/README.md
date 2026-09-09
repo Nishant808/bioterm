@@ -50,19 +50,9 @@ Both take `workflow_dispatch` (manual "Run workflow" button) and share a
 ## SQLite → Postgres data copy (optional, to carry your local history over)
 
 ```bash
-uv pip install "psycopg[binary]"
-DATABASE_URL='postgresql+psycopg://…' uv run bioterm init-db
-uv run python - <<'PY'
-import pandas as pd, sqlalchemy as sa
-src = sa.create_engine("sqlite:///data/bioterm.db")
-dst = sa.create_engine("postgresql+psycopg://…")
-for t in ["securities","prices","technicals","fundamentals","clinical_trials","fda_events",
-          "filings","news","catalysts","scores","ingest_runs","watchlist","manual_catalysts",
-          "notes","app_meta"]:
-    try:
-        df = pd.read_sql_table(t, src)
-    except Exception:
-        continue
-    df.to_sql(t, dst, if_exists="append", index=False); print(t, len(df))
-PY
+DATABASE_URL='postgresql+psycopg://…' uv run bioterm import-sqlite data/bioterm.db
 ```
+
+Truncates + bulk-loads every table and resets the Postgres autoincrement sequences.
+Idempotent. (`setup-github.sh` doesn't need this — the first Actions `ingest-full`
+populates the DB from scratch — but it gives the dashboard data instantly.)

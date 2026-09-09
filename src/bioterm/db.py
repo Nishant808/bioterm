@@ -288,8 +288,18 @@ def get_engine() -> Engine:
     global _ENGINE
     if _ENGINE is None:
         url = load_settings().database_url
-        connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-        _ENGINE = create_engine(url, future=True, connect_args=connect_args)
+        if url.startswith("sqlite"):
+            _ENGINE = create_engine(url, future=True,
+                                    connect_args={"check_same_thread": False})
+        else:
+            # Postgres (Neon): pre_ping revives connections dropped by Neon's
+            # idle auto-suspend; small pool + recycle keeps it serverless-friendly.
+            _ENGINE = create_engine(
+                url, future=True, pool_pre_ping=True, pool_size=3, max_overflow=2,
+                pool_recycle=300,
+                connect_args={"connect_timeout": 15,
+                              "keepalives": 1, "keepalives_idle": 30},
+            )
     return _ENGINE
 
 
