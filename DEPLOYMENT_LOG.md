@@ -15,10 +15,21 @@ A running journal so anyone (you, or a fresh Claude session) can resume instantl
 - **GitHub repo (PRIVATE): https://github.com/Nishant808/bioterm** — pushed, secrets
   `DATABASE_URL` + `SEC_UA` set. Crons tuned for the 2000-min/mo free tier
   (`ingest-fast` every 2h 11-23 UTC, `ingest-full` daily 09:00 UTC).
-- **First workflow runs:** the initial `uv pip install --system` failed (runner python
-  is PEP-668 externally-managed) → fixed to `uv sync --no-dev` + `uv run` (commit
-  `<see git>`), pushed, re-triggered. Watching run 34388681038.
+- **Workflow debugging (2 CI-only bugs found + fixed):**
+  1. `uv pip install --system` → runner python is PEP-668 externally-managed →
+     switched both workflows to `uv sync --no-dev` + `uv run`. ✅ `ingest-fast`
+     then went green (4m17s).
+  2. `bulk_upsert` on Postgres → psycopg caps bound params at **65535/statement**;
+     `news` (~6000 rows × 13 cols) and `clinical_trials` (~5800 × 16) overflowed.
+     SQLite had tolerated it. Fixed: `bulk_upsert` chunks by `60000/ncols`, and
+     `_clean_rows` dedups a batch on its PK (so `ON CONFLICT DO UPDATE` can't hit a
+     row twice). Verified with an 8000-row upsert on Neon. **Neither bug is
+     reachable locally on SQLite — only surfaced against real Postgres.**
 - Dashboard verified rendering against the real Neon DB (all 8 pages).
+- Re-triggered `ingest-full` on the fixed code (run 34389471426) — watching to
+  completion. Old runs cancelled. NOTE: fast+full share a `concurrency` group, so
+  queuing both at once drops the older pending one — trigger them one at a time,
+  or just let the schedule run fast.
 
 **What's left:**
 | step | who | status |
