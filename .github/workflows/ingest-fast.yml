@@ -28,17 +28,17 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-      - run: uv pip install --system -e .
+      - run: uv sync --no-dev
       - name: Fast refresh
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           BIOTERM_SEC_USER_AGENT: ${{ secrets.SEC_UA }}
         run: |
-          bioterm init-db
-          bioterm ingest --preset fast
+          uv run bioterm init-db
+          uv run bioterm ingest --preset fast
       - name: Alerts
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: bioterm alerts
+        run: uv run bioterm alerts

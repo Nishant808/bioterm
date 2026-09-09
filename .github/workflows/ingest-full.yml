@@ -29,14 +29,14 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
-      - run: uv pip install --system -e .
+      - run: uv sync --no-dev
       - name: Full refresh
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           BIOTERM_SEC_USER_AGENT: ${{ secrets.SEC_UA }}
-        run: bioterm ingest --preset full
+        run: uv run bioterm ingest --preset full
       - name: Summary
         if: always()
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: bioterm status || true
+        run: uv run bioterm status || true
