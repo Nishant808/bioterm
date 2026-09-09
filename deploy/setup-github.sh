@@ -43,10 +43,18 @@ echo "▸ setting Actions secrets…"
 gh secret set DATABASE_URL --body "$DB_URL"
 gh secret set SEC_UA       --body "$SEC_UA"
 
-echo "▸ kicking the first full ingest…"
-gh workflow run ingest-full.yml
-sleep 4
-gh run list --workflow=ingest-full.yml --limit 1
+echo "▸ waiting for GitHub to index the workflow files…"
+for i in $(seq 1 15); do
+  gh workflow list >/dev/null 2>&1 && gh workflow view ingest-full.yml >/dev/null 2>&1 && break
+  sleep 4
+done
+
+echo "▸ kicking the first ingest (fast for a quick load, then full)…"
+gh workflow run ingest-fast.yml 2>/dev/null || true
+gh workflow run ingest-full.yml 2>/dev/null \
+  || echo "  (could not auto-trigger — open the repo's Actions tab and click 'Run workflow')"
+sleep 6
+gh run list --limit 3 || true
 
 cat <<EOF
 
