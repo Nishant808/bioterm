@@ -17,7 +17,8 @@ set -euo pipefail
 : "${DATABASE_URL:?set DATABASE_URL (postgresql+psycopg://...)}"
 : "${SEC_UA:=BioTerm/0.1 ($(git config user.email))}"
 : "${REPO_NAME:=bioterm}"
-: "${REPO_VISIBILITY:=public}"   # public = unlimited Actions minutes (recommended)
+: "${REPO_VISIBILITY:=private}"   # private: crons are tuned to the 2000-min/mo free tier
+                                 # (set REPO_VISIBILITY=public for unlimited minutes)
 
 export PATH="/opt/homebrew/bin:$PATH"
 

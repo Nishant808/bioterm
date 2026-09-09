@@ -32,13 +32,18 @@ and the exact click-by-click for the account steps.
 
 ## The workflows
 
-| file | what | cron | ~time |
+| file | what | cron (private-repo default) | ~time |
 |---|---|---|---|
-| `.github/workflows/ingest-fast.yml` | news + sentiment + catalysts + score | `*/30 * * * *` | 4–8 min |
-| `.github/workflows/ingest-full.yml` | universe + prices + technicals + EDGAR + fundamentals + clinical + FDA + recompute | `0 6,13,21 * * *` | 15–25 min |
+| `.github/workflows/ingest-fast.yml` | news + sentiment + catalysts + score + alerts | `0 11-23/2 * * *` (every 2h, 11–23 UTC) | 4–8 min |
+| `.github/workflows/ingest-full.yml` | + prices, technicals, EDGAR, fundamentals, clinical, FDA, insiders | `0 9 * * *` (daily) | 15–25 min |
 
+≈ 1650 Actions-min/month — inside the 2000-min free tier for **private** repos.
 Both take `workflow_dispatch` (manual "Run workflow" button) and share a
-`concurrency` group so fast + full never overlap. Widen the crons on a private repo.
+`concurrency` group so they never overlap. On a **public** repo (unlimited minutes)
+widen to `*/30 * * * *` / `0 6,13,21 * * *` — the comments in each file show how.
+
+> GitHub disables scheduled workflows after 60 days of no repo activity — a commit
+> or a manual run resets that.
 
 ## Alternatives (not the recommended path)
 

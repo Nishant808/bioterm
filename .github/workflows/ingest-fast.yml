@@ -1,14 +1,18 @@
 # Fast pass: sector news + per-ticker Google News + sentiment + catalysts + Focus
-# Score. ~4-8 min. This is what keeps "Stocks in Focus" and the news feed current
-# between the 3x/day full runs.
+# Score + alert check. ~4-8 min. Keeps "Stocks in Focus" and the news feed current.
 #
-# Same two secrets as ingest-full.yml (DATABASE_URL, SEC_UA).
+# Secrets: DATABASE_URL, SEC_UA  (+ optional TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)
+#
+# Cadence tuned for a PRIVATE repo (2000 Actions-min/month free tier):
+#   every 2h from 11:00-23:00 UTC (≈ 7am-7pm ET, when biotech news breaks)
+#   ≈ 7 runs/day · ~5 min each · ~1050 min/month
+# On a public repo you can widen this to "*/30 * * * *" (unlimited minutes).
 
 name: ingest-fast
 
 on:
   schedule:
-    - cron: "*/30 * * * *"         # every 30 min (GitHub may batch/delay under load)
+    - cron: "0 11-23/2 * * *"
   workflow_dispatch: {}
 
 concurrency:
@@ -35,6 +39,6 @@ jobs:
       - name: Alerts
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}   # optional
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}       # optional
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: bioterm alerts
