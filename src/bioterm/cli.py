@@ -112,6 +112,22 @@ def score() -> None:
 
 
 @app.command()
+def alerts(
+    deliver: bool = typer.Option(True, "--deliver/--no-deliver",
+                                 help="push new alerts (Telegram, if configured)"),
+) -> None:
+    """Evaluate alert rules against the current data; record + optionally push new ones."""
+    from . import alerts as alerts_mod
+
+    out = alerts_mod.run(deliver=deliver)
+    console.print_json(data=out)
+    firing = alerts_mod.evaluate()
+    for a in firing[:20]:
+        icon = {"score move": "📈", "catalyst soon": "🗓", "headline": "📰"}.get(a["kind"], "•")
+        console.print(f"{icon} [bold]{a['ticker']}[/bold] {a['kind']}: {a['detail']}")
+
+
+@app.command()
 def status() -> None:
     """Show recent ingest runs and table row counts."""
     from .db import (catalysts, clinical_trials, fda_events, filings, news,

@@ -32,3 +32,9 @@ jobs:
         run: |
           bioterm init-db
           bioterm ingest --preset fast
+      - name: Alerts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}   # optional
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}       # optional
+        run: bioterm alerts

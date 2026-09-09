@@ -278,6 +278,19 @@ def run() -> dict:
         )
 
     n = bulk_upsert(scores, rows)
+
+    # append a snapshot (one row / ticker / run) so movers work between runs,
+    # not just day-over-day; keep ~14 days of history.
+    from ..db import get_engine, score_snapshots
+
+    ts = datetime.now(timezone.utc)
+    snaps = [{"ts": ts, "ticker": r["ticker"], "focus_score": float(r["focus_score"]),
+              "rank": int(r["rank"])} for _, r in df.iterrows()]
+    with get_engine().begin() as conn:
+        conn.execute(score_snapshots.insert(), snaps)
+        cutoff = ts - pd.Timedelta(days=14)
+        conn.execute(score_snapshots.delete().where(score_snapshots.c.ts < cutoff))
+
     log.info("scores: %d tickers ranked (asof %s), top=%s",
              n, asof, df.iloc[0]["ticker"] if not df.empty else "-")
     return {"rows": n, "asof": str(asof)}

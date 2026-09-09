@@ -199,6 +199,28 @@ ingest_runs = Table(
     Column("detail", Text),
 )
 
+# one row per ticker per score run - powers day/hour-over-run movers
+score_snapshots = Table(
+    "score_snapshots", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("ts", DateTime, index=True),
+    Column("ticker", String(16), index=True),
+    Column("focus_score", Float),
+    Column("rank", Integer),
+)
+
+# append-only record of alerts that fired (from `bioterm alerts`)
+alerts_fired = Table(
+    "alerts_fired", metadata,
+    Column("id", String(48), primary_key=True),
+    Column("ts", DateTime, index=True),
+    Column("kind", String(24)),
+    Column("ticker", String(16), index=True),
+    Column("detail", Text),
+    Column("weight", Float),
+    Column("delivered", Integer, default=0),
+)
+
 # ------------------------------------------------------------------ user-editable
 # These hold state the dashboard mutates. They are seeded once from the YAML files
 # under config/, then the DB is the source of truth (so edits survive on a cloud

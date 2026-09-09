@@ -60,12 +60,34 @@ def scores_df() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=120)
-def prev_scores_df() -> pd.DataFrame:
+def prev_scores_df(min_age_hours: int = 6) -> pd.DataFrame:
+    """The score snapshot to diff 'movers' against: the most recent run that is at
+    least `min_age_hours` old (so a burst of runs doesn't zero out the deltas)."""
+    runs = q("SELECT DISTINCT ts FROM score_snapshots ORDER BY ts DESC")
+    if not runs.empty:
+        runs["ts"] = pd.to_datetime(runs["ts"], utc=True)
+        cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=min_age_hours)
+        older = runs[runs["ts"] <= cutoff]
+        pick = (older.iloc[0]["ts"] if not older.empty
+                else (runs.iloc[1]["ts"] if len(runs) > 1 else None))
+        if pick is not None:
+            return q("SELECT ticker, focus_score, rank FROM score_snapshots "
+                     "WHERE ts = :t", {"t": pick.to_pydatetime()})
+    # fallback: previous asof in the scores table
     asofs = q("SELECT DISTINCT asof FROM scores ORDER BY asof DESC LIMIT 2")
     if len(asofs) < 2:
         return pd.DataFrame(columns=["ticker", "focus_score", "rank"])
-    prev = asofs.iloc[1]["asof"]
-    return q("SELECT ticker, focus_score, rank FROM scores WHERE asof = :a", {"a": prev})
+    return q("SELECT ticker, focus_score, rank FROM scores WHERE asof = :a",
+             {"a": asofs.iloc[1]["asof"]})
+
+
+@st.cache_data(ttl=120)
+def score_history(ticker: str) -> pd.DataFrame:
+    df = q("SELECT ts, focus_score, rank FROM score_snapshots WHERE ticker = :t "
+           "ORDER BY ts", {"t": ticker})
+    if not df.empty:
+        df["ts"] = pd.to_datetime(df["ts"], utc=True)
+    return df
 
 
 @st.cache_data(ttl=120)
@@ -128,6 +150,11 @@ def filings_df(ticker: str) -> pd.DataFrame:
 def ingest_status() -> pd.DataFrame:
     return q("SELECT job, started_at, finished_at, status, rows FROM ingest_runs "
              "ORDER BY id DESC LIMIT 40")
+
+
+@st.cache_data(ttl=60)
+def alerts_fired_df(limit: int = 300) -> pd.DataFrame:
+    return q("SELECT * FROM alerts_fired ORDER BY ts DESC LIMIT :n", {"n": limit})
 
 
 @st.cache_data(ttl=300)

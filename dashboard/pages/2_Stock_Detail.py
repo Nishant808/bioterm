@@ -9,8 +9,8 @@ from plotly.subplots import make_subplots
 
 from _shared import (PLOTLY_TEMPLATE, catalysts_df, disclaimer, filings_df,
                      fundamentals_row, money, news_df, pct, prices_df,
-                     runway_badge, scores_df, sidebar_freshness, technicals_df,
-                     trials_df, universe_df)
+                     runway_badge, score_history, scores_df, sidebar_freshness,
+                     technicals_df, trials_df, universe_df)
 from bioterm import store
 
 CATALYST_TYPES = ["pdufa", "adcom", "fda_action", "phase3_readout", "phase2_readout",
@@ -82,6 +82,16 @@ if on_wl:
         st.cache_data.clear()
     if wl.get("molecules"):
         st.caption("tracked programs: " + " · ".join(wl["molecules"]))
+
+# --- Focus Score history ---
+_hist = score_history(ticker)
+if len(_hist) > 1:
+    hf = go.Figure(go.Scatter(x=_hist["ts"], y=_hist["focus_score"], mode="lines+markers",
+                              line=dict(color="#00b8d4", width=2)))
+    hf.update_layout(template=PLOTLY_TEMPLATE, height=140,
+                     margin=dict(l=10, r=10, t=24, b=10),
+                     title="Focus Score history", yaxis_title=None, xaxis_title=None)
+    st.plotly_chart(hf, use_container_width=True)
 
 # --- research notes (persisted) ---
 with st.expander("📝 research notes", expanded=bool(store.get_note(ticker))):
