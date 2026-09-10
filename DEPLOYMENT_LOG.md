@@ -279,3 +279,28 @@ Live at https://bioterm.streamlit.app (redeploys on push).
 - `.streamlit/config.toml`: `font = "sans serif"` (CSS handles the mono bits); palette
   updated; dropped `runOnSave`.
 - Backend untouched — 34 tests green.
+
+---
+
+## 2026-09-10 — session 5: Paper-Trading Desk (pages/8)
+
+A separate strategy-testing tab — **not** connected to the research pages.
+
+- **Tables** (`db.py`): `pf_portfolios` (id, name, cash_start) + `pf_trades` (blotter).
+  Auto-created by `init_db()` on next deploy / Actions run.
+- **`src/bioterm/portfolio.py`** — pure maths: `positions()` (average-cost, long-only),
+  `cash_balance()`, `mark_to_market()` (net worth / realised / unrealised), `equity_curve()`
+  (daily net worth from trades × EOD closes), `validate_trade()` (no negative cash, no
+  overselling). 6 tests.
+- **`store.py`** — `pf_list / pf_create / pf_delete / pf_reset / pf_get_trades /
+  pf_add_trade / pf_delete_trade`.
+- **`_shared.py`** — `last_close_all()` (one query for all latest closes),
+  `price_hist(tickers, start)`.
+- **`dashboard/pages/8_Portfolio.py`** — portfolio selector + new/reset/delete,
+  equity chip strip, net-worth curve, positions table (P&L / return / weight / focus #),
+  trade ticket (ticker · BUY/SELL · qty · price default=last close · fees · **backdate**),
+  blotter with undo-last + CSV. On-theme (`page_setup`, `stat_strip`, `plotly_layout`).
+- Simulated fills at the last daily close; long-only; loudly labelled "no real orders".
+- Verified against Neon: backdated 3-trade strategy → equity curve Aug 2→Sep 6,
+  +16.9%, realised $500, unrealised $16.4k, all P&L/returns correct.
+- 40 tests green.

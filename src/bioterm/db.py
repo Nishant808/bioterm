@@ -280,6 +280,31 @@ app_meta = Table(
     Column("updated_at", DateTime),
 )
 
+# ------------------------------------------------------------------ paper trading
+# Fully separate from the ingestion pipeline. A portfolio is a starting cash
+# balance; positions and equity are *derived* from the trade blotter + EOD prices.
+
+pf_portfolios = Table(
+    "pf_portfolios", metadata,
+    Column("id", String(32), primary_key=True),
+    Column("name", String(80)),
+    Column("cash_start", Float),
+    Column("created_at", DateTime),
+)
+
+pf_trades = Table(
+    "pf_trades", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("portfolio_id", String(32), index=True),
+    Column("ts", DateTime),
+    Column("ticker", String(16), index=True),
+    Column("side", String(4)),       # BUY / SELL
+    Column("qty", Float),
+    Column("price", Float),           # simulated fill price
+    Column("fees", Float),
+    Column("note", Text),
+)
+
 
 _ENGINE: Engine | None = None
 

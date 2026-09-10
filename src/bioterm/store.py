@@ -10,12 +10,14 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from datetime import date, datetime, timezone
 from typing import Any
 
 import pandas as pd
 
 from .config import load_settings
+from .db import pf_portfolios, pf_trades  # noqa: F401  (used below)
 from .db import (app_meta, bulk_upsert, get_engine, manual_catalysts, notes,
                  read_sql, watchlist)
 
@@ -178,6 +180,75 @@ def get_meta(key: str, default: Any = None) -> Any:
 def set_meta(key: str, value: Any) -> None:
     bulk_upsert(app_meta, [{"key": key, "value": json.dumps(value, default=str),
                             "updated_at": _now()}])
+
+
+# ------------------------------------------------------------------ paper trading
+def _slug(name: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:28]
+    return s or "portfolio"
+
+
+def pf_list() -> list[dict[str, Any]]:
+    try:
+        df = read_sql("SELECT * FROM pf_portfolios ORDER BY created_at")
+    except Exception:  # noqa: BLE001
+        df = pd.DataFrame()
+    return df.to_dict("records") if not df.empty else []
+
+
+def pf_ensure_default() -> str:
+    if not pf_list():
+        return pf_create("Strategy A", 100_000.0)
+    return pf_list()[0]["id"]
+
+
+def pf_create(name: str, cash_start: float = 100_000.0) -> str:
+    pid = _slug(name)
+    existing = {p["id"] for p in pf_list()}
+    n, base = pid, pid
+    i = 2
+    while n in existing:
+        n = f"{base}-{i}"
+        i += 1
+    bulk_upsert(pf_portfolios, [{"id": n, "name": name.strip() or n,
+                                 "cash_start": float(cash_start),
+                                 "created_at": _now()}])
+    return n
+
+
+def pf_delete(pid: str) -> None:
+    with get_engine().begin() as conn:
+        conn.execute(pf_trades.delete().where(pf_trades.c.portfolio_id == pid))
+        conn.execute(pf_portfolios.delete().where(pf_portfolios.c.id == pid))
+
+
+def pf_reset(pid: str) -> None:
+    with get_engine().begin() as conn:
+        conn.execute(pf_trades.delete().where(pf_trades.c.portfolio_id == pid))
+
+
+def pf_get_trades(pid: str) -> pd.DataFrame:
+    try:
+        return read_sql("SELECT * FROM pf_trades WHERE portfolio_id = :p ORDER BY ts, id",
+                        {"p": pid})
+    except Exception:  # noqa: BLE001
+        return pd.DataFrame()
+
+
+def pf_add_trade(pid: str, ticker: str, side: str, qty: float, price: float,
+                 fees: float = 0.0, note: str = "", ts: datetime | None = None) -> None:
+    with get_engine().begin() as conn:
+        conn.execute(pf_trades.insert(), [{
+            "portfolio_id": pid, "ts": ts or _now(),
+            "ticker": ticker.strip().upper(), "side": side.upper(),
+            "qty": float(qty), "price": float(price), "fees": float(fees or 0.0),
+            "note": (note or "").strip(),
+        }])
+
+
+def pf_delete_trade(trade_id: int) -> None:
+    with get_engine().begin() as conn:
+        conn.execute(pf_trades.delete().where(pf_trades.c.id == int(trade_id)))
 
 
 # ------------------------------------------------------------------ seeding

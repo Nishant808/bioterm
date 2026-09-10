@@ -10,8 +10,10 @@ investment advice.
 
 ```
 src/bioterm/
-  config.py     YAML + env  ·  db.py  SQLAlchemy Core schema (19 tables) + portable bulk_upsert
-  store.py      DB-backed user state (watchlist / manual catalysts / notes / app_meta) — YAML seeds once
+  config.py     YAML + env  ·  db.py  SQLAlchemy Core schema (21 tables) + portable bulk_upsert
+  store.py      DB-backed user state (watchlist / manual catalysts / notes / app_meta
+                / pf_portfolios / pf_trades) — YAML seeds the research state once
+  portfolio.py  paper-trading maths — positions (avg cost), cash, equity curve, P&L (pure)
   universe.py   XBI holdings + seed list + watchlist  →  securities
   httpx_util.py pooled session, retry/backoff, per-host throttle
   ingest/       prices fundamentals edgar clinical fda insiders news   (each: run(tickers) -> dict)
@@ -21,7 +23,9 @@ src/bioterm/
   scheduler.py  APScheduler (local "always on")
   cli.py        typer:  init-db · universe · ingest · score · alerts · status · serve · scheduler
 dashboard/      Streamlit — _ui.py (theme + page_setup + components),
-                _shared.py (cached DB reads + sentiment_df), Home.py + pages/1..7
+                _shared.py (cached DB reads + sentiment_df), Home.py + pages/1..8
+                (8 = Paper-Trading Desk — buy/sell blotter + positions + net-worth curve;
+                 fully separate from the research pages, simulated fills, long-only)
 .github/workflows/  ingest-fast.yml (0 11-23/2)  ·  ingest-full.yml (0 9)  — private-repo cadence
 deploy/         Dockerfile, compose, launchd, setup-github.sh, README.md
 ```
