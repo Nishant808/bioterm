@@ -320,3 +320,15 @@ Fix (commit `97a84f7`):
   `universe_df` (present since v1) + two tiny cached readers defined inline.
 - `requirements.txt` gained a `rebuild-marker` line — bump it whenever you add a
   cross-page helper so Cloud does a full container rebuild.
+
+### 2026-09-10 — session 5, portfolio fixes (commit `55581ac`)
+
+Two user-reported issues:
+1. **price didn't follow the ticker** — the trade ticket was in `st.form`, which
+   batches widget changes until submit. Removed the form; ticker/side now rerun
+   and the price field re-seeds from the new name's last close. Per-ticker price
+   state (`pf_px::<tk>` keys) remembers manual edits.
+2. **"lose my position on boot up"** — trades were always persisted in Neon
+   (`pf_trades`), but the portfolio selector defaulted to the first book on every
+   load, so anyone using a 2nd portfolio saw an empty one. Fixed: selection is now
+   in the URL (`?pf=<id>`). Verified: place trade → full reload → position persists.
