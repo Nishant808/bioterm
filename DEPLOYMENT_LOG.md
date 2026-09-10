@@ -332,3 +332,30 @@ Two user-reported issues:
    (`pf_trades`), but the portfolio selector defaulted to the first book on every
    load, so anyone using a 2nd portfolio saw an empty one. Fixed: selection is now
    in the URL (`?pf=<id>`). Verified: place trade → full reload → position persists.
+
+### 2026-09-10 — session 5, portfolio fixes cont. (commit `bbe72b7`)
+
+Follow-up to the previous entry — the `?pf=` param only survives a reload, not
+in-app navigation (click away to Home, click back → param gone → first book).
+
+Fix: DB-backed last-book pointer. `app_meta` key `pf_last_book` is written
+whenever the selection changes and read as the fallback when there's no `?pf=`.
+Restore order is **fresh-create > `?pf=` > `pf_last_book` > first book**. The two
+helpers (`_get_last_book` / `_set_last_book`) are **inline in the page**, not in
+`bioterm.portfolio` — that module is already in Cloud's `sys.modules` after the
+page's first load, so a new symbol there would serve stale (same class of bug as
+the session-5 ImportError).
+
+Verified locally against Neon:
+- switch to Strategy B → navigate to Home → back to Portfolio → lands on B with
+  its ABBV position intact (the case `?pf=` alone didn't cover).
+- bare-URL reload → lands on the last-selected book.
+- ticker→price still good: ABBV $249.61 → MRNA $137.03 on switch.
+- delete-portfolio falls back cleanly to the first book.
+- test portfolio + `pf_last_book` row removed from Neon afterwards; 40 tests green.
+
+Known minor cosmetic: deleting a portfolio while a non-default ticker sits in the
+ticket can briefly show that ticker with the previous name's price until the next
+interaction (the `st.rerun()` in the delete handler aborts before the ticket
+re-seeds). Self-corrects on any ticket change; not worth fighting the
+"remember my manual price edit" behaviour over.
