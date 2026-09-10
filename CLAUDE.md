@@ -40,11 +40,15 @@ private repo `Nishant808/bioterm`.
 - `_ui.py` owns the theme CSS (injected every run — Streamlit drops prior-page markup),
   the palette (`ACCENT/POS/NEG/WARN`, `PHASE_COLORS`, `SMA_COLORS`), `plotly_layout()`,
   and components: `eyebrow()`, `stat_strip()`, `signal_dot()`, `sentiment_word()`.
-- **Deploy gotcha:** Streamlit Cloud does a *fast* reboot on a `.py`-only push and keeps
-  imported helper modules (`_shared`, `_ui`) in `sys.modules`. If a page imports a
-  brand-new symbol from `_shared`/`_ui`, it ImportErrors on the live app until a full
-  rebuild. **When you add a cross-page helper, also bump the `rebuild-marker` line in
-  `requirements.txt`** to force a clean container rebuild.
+- **Deploy gotcha:** Streamlit Cloud does a *fast* reboot on a `.py`-only push — it
+  pulls the new source but keeps every imported module (`bioterm.*`, `_shared`, `_ui`)
+  in `sys.modules`. A page that imports a **brand-new symbol** from a long-lived module
+  then ImportErrors on the live app (traceback points at the new source line inside an
+  old frame). Page files under `pages/` always re-execute, so keep page-critical logic
+  in the page itself or in a **brand-new module**. To actually force a full restart you
+  must **change a real dependency line in `requirements.txt`** (the `rebuild-marker`
+  *comment* alone does NOT trigger a reinstall — learned the hard way, session 5) or
+  reboot from the Streamlit Cloud console.
 - News sentiment: `_shared.sentiment_df(days)` / `sentiment_series(ticker, days)`.
 - No repeated disclaimer on pages — it lives once in the sidebar footer.
 

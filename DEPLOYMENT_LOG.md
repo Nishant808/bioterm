@@ -378,11 +378,22 @@ SQLAlchemy emits SQL by name → a separate MetaData is fine. Only `get_engine` 
 imported from `bioterm.db`. `bioterm.db` keeps its copies for
 `init_db()`/`create_all()`.
 
-This push **also changes `requirements.txt`** (real line edit, not just the
-marker comment) to force a genuine full rebuild. Verified locally: 40 tests +
-full CRUD roundtrip against Neon. Live verification pending the rebuild.
+Verified locally: 40 tests + full CRUD roundtrip against Neon.
 
-**Lesson:** the rebuild-marker trick only works if Streamlit Cloud actually
-re-runs `pip install` — a pure comment change may not count. When a page needs a
-*new* symbol from a long-lived module (`bioterm.db`, `_shared`), either put the
-code in the page / a fresh module, or make a substantive `requirements.txt` edit.
+### 2026-09-10 — session 5, forcing the Cloud restart (commit `b177bdd`)
+
+`1166eb4` / `56088d6` still only touched **comment** lines in `requirements.txt`
+(the `rebuild-marker`). Streamlit Cloud fast-rebooted, pulled the new source, but
+**kept `bioterm.portfolio` in `sys.modules`** — so `＋ new` still threw the old
+`ImportError` (traceback frame said `create_portfolio` but pointed at the new
+line 195, the tell-tale of stale bytecode over fresh source).
+
+Fix: added a **real dependency** — `watchdog>=4.0` — to `requirements.txt` and
+`pyproject.toml`. A genuine package change forces Cloud to re-run the install and
+restart the process, which reloads every `bioterm.*` module. `watchdog` is worth
+having anyway (Streamlit's recommended file-watcher).
+
+**Rule going forward:** to force a live restart you must change a real dependency
+line in `requirements.txt` (or reboot from the Streamlit Cloud console) — the
+`rebuild-marker` comment alone is not enough. And prefer keeping page-critical
+code in the page file or a brand-new module so a restart isn't needed at all.
