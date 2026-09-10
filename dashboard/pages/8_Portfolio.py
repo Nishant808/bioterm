@@ -49,34 +49,36 @@ if not plist:
     pf.ensure_default()
     plist = pf.list_portfolios()
 
-pcol = st.columns([2.4, 1, 1, 1])
 names = {p["id"]: p["name"] for p in plist}
 ids = list(names)
-want = st.session_state.pop("_pf_sel", None)
+# remember the chosen portfolio in the URL so a reload / bookmark keeps it
+_want = st.session_state.pop("_pf_new", None) or st.query_params.get("pf")
+
+pcol = st.columns([2.4, 1, 1, 1])
 sel = pcol[0].selectbox("portfolio", ids, format_func=lambda i: names[i],
-                        index=ids.index(want) if want in ids else 0,
+                        index=ids.index(_want) if _want in ids else 0,
                         label_visibility="collapsed")
+st.query_params["pf"] = sel
+
 with pcol[1].popover("＋ new", use_container_width=True):
     nn = st.text_input("name", f"Strategy {chr(65 + len(plist))}", key="pf_new_name")
     nc = st.number_input("starting cash ($)", 1000.0, 100_000_000.0, 100_000.0,
                          step=10_000.0, key="pf_new_cash")
     if st.button("create", type="primary", key="pf_new_go"):
-        st.session_state["_pf_sel"] = pf.create_portfolio(nn, nc)
-        st.cache_data.clear()
+        st.session_state["_pf_new"] = pf.create_portfolio(nn, nc)
         st.rerun()
 if pcol[2].button("↺ reset", use_container_width=True,
                   help="wipe all trades in this portfolio, keep the cash setting"):
     pf.reset_portfolio(sel)
-    st.cache_data.clear()
     st.rerun()
 if pcol[3].button("🗑 delete", use_container_width=True, disabled=len(plist) <= 1):
     pf.delete_portfolio(sel)
-    st.cache_data.clear()
+    st.query_params.pop("pf", None)
     st.rerun()
 
 port = next(p for p in plist if p["id"] == sel)
 cash_start = float(port["cash_start"])
-trades = pf.get_trades(sel)
+trades = pf.get_trades(sel)          # always read fresh from the DB — never cached
 last_px = last_close_all()
 summ = pf.mark_to_market(trades, last_px, cash_start)
 
@@ -150,8 +152,11 @@ with book_col:
 
     eyebrow("Blotter")
     if trades.empty:
-        st.caption("no trades yet")
+        st.caption("no trades yet — your trades are saved to the database and "
+                   "persist across sessions")
     else:
+        st.caption(f"{len(trades)} trade(s) · saved to the database · "
+                   f"portfolio `{sel}`")
         tb = trades.copy()
         tb["ts"] = pd.to_datetime(tb["ts"])
         tb["value"] = tb["qty"] * tb["price"]
@@ -180,31 +185,48 @@ with ticket_col:
     held_now = pf.positions(trades)
     held_now = held_now[held_now["qty"] > 1e-9]["ticker"].tolist()
 
-    with st.form("pf_ticket", clear_on_submit=False):
-        tk = st.selectbox("ticker", uni,
-                          index=uni.index(held_now[0]) if held_now else 0)
-        side = st.radio("side", ["BUY", "SELL"], horizontal=True)
-        lc = last_px.get(tk)
-        c1, c2 = st.columns(2)
-        qty = c1.number_input("quantity", min_value=0.0, value=100.0, step=10.0)
-        price = c2.number_input("price ($)", min_value=0.0,
-                                value=round(float(lc), 2) if lc else 0.0, step=0.01,
-                                help="defaults to the last daily close — edit to "
-                                     "simulate a specific entry")
-        c3, c4 = st.columns(2)
-        fees = c3.number_input("fees / slippage ($)", min_value=0.0, value=0.0, step=1.0)
-        tdate = c4.date_input("trade date", value=pd.Timestamp.today(),
-                              max_value=pd.Timestamp.today(),
-                              help="backdate to reconstruct a past strategy")
-        note = st.text_input("note", placeholder="thesis / trigger")
-        est = qty * price + (fees if side == "BUY" else -fees)
-        st.caption(("cost" if side == "BUY" else "proceeds")
-                   + f" ≈ ${abs(est):,.2f}   ·   cash after ≈ "
-                   + f"${summ['cash'] + (-est if side == 'BUY' else est):,.0f}")
-        go_trade = st.form_submit_button(f"{side} {tk}", type="primary",
-                                         use_container_width=True)
+    # NOT wrapped in st.form — so changing the ticker reruns and refreshes the
+    # price below (a form would batch the change until submit).
+    tk = st.selectbox("ticker", uni, key="pf_tk",
+                      index=uni.index(held_now[0]) if held_now else 0)
+    side = st.radio("side", ["BUY", "SELL"], horizontal=True, key="pf_side")
+    lc = last_px.get(tk)
 
-    if go_trade:
+    # per-ticker price state: seeds from that name's last close, remembers your edits
+    _pk = f"pf_px::{tk}"
+    if _pk not in st.session_state:
+        st.session_state[_pk] = round(float(lc), 2) if lc else 0.0
+
+    if "pf_qty" not in st.session_state:
+        st.session_state["pf_qty"] = 100.0
+    c1, c2 = st.columns(2)
+    qty = c1.number_input("quantity", min_value=0.0, step=10.0, key="pf_qty")
+    price = c2.number_input("price ($)", min_value=0.0, step=0.01, key=_pk,
+                            help=f"last close for {tk}: "
+                                 + (f"${lc:,.2f}" if lc else "n/a — enter one"))
+    if lc and abs(price - round(float(lc), 2)) >= 0.01:
+        if c2.button(f"↺ use last close ${lc:,.2f}", key="pf_usemkt"):
+            st.session_state[_pk] = round(float(lc), 2)
+            st.rerun()
+
+    c3, c4 = st.columns(2)
+    fees = c3.number_input("fees / slippage ($)", min_value=0.0, value=0.0, step=1.0,
+                           key="pf_fees")
+    tdate = c4.date_input("trade date", value=pd.Timestamp.today(),
+                          max_value=pd.Timestamp.today(), key="pf_tdate",
+                          help="backdate to reconstruct a past strategy")
+    note = st.text_input("note", placeholder="thesis / trigger", key="pf_note")
+
+    est = qty * price + (fees if side == "BUY" else -fees)
+    st.caption(("cost" if side == "BUY" else "proceeds")
+               + f" ≈ ${abs(est):,.2f}   ·   cash after ≈ "
+               + f"${summ['cash'] + (-est if side == 'BUY' else est):,.0f}")
+
+    if lc is None:
+        st.caption("⚠️ no price on file for this ticker — enter one manually")
+
+    if st.button(f"{side} {qty:g} {tk}", type="primary", use_container_width=True,
+                 key="pf_go"):
         err = pf.validate_trade(trades, cash_start, tk, side, qty, price, fees)
         if err:
             st.error(err)
@@ -212,11 +234,6 @@ with ticket_col:
             ts = pd.Timestamp(tdate)
             if ts.normalize() >= pd.Timestamp.today().normalize():
                 ts = pd.Timestamp.now(tz="UTC").tz_localize(None)
-            pf.add_trade(sel, tk, side, qty, price, fees, note,
-                               ts=ts.to_pydatetime())
-            st.cache_data.clear()
-            st.toast(f"{side} {qty:g} {tk} @ ${price:.2f}")
+            pf.add_trade(sel, tk, side, qty, price, fees, note, ts=ts.to_pydatetime())
+            st.toast(f"saved: {side} {qty:g} {tk} @ ${price:.2f}")
             st.rerun()
-
-    if lc is None:
-        st.caption("⚠️ no price on file for this ticker yet — enter one manually")
