@@ -67,11 +67,9 @@ html, body, [class*="css"], .stApp, [data-testid="stMarkdownContainer"] {{
   padding-top: 2.2rem; padding-bottom: 3rem; max-width: 1360px;
 }}
 
-/* kill Streamlit Cloud chrome we don't want */
-[data-testid="stToolbar"], [data-testid="stDecoration"],
-.viewerBadge_container__1QSob, [data-testid="stStatusWidget"] ~ *,
-footer {{ display: none !important; }}
-[data-testid="stHeader"] {{ background: transparent; height: 0; }}
+/* trim Streamlit chrome: toolbar (Fork/Deploy), top gradient bar, footer badge */
+[data-testid="stToolbar"], [data-testid="stDecoration"], footer {{ display: none !important; }}
+[data-testid="stHeader"] {{ background: transparent; }}
 
 /* headings */
 h1 {{ font-size: 1.5rem !important; font-weight: 700; letter-spacing:-0.01em;
@@ -242,7 +240,8 @@ def _sidebar() -> None:
             (sb.success if ok else sb.error)(msg)
 
     sb.markdown(
-        "<div style='position:fixed;bottom:12px;width:15rem;'>"
+        "<div style='margin-top:2rem;padding-top:.8rem;border-top:1px solid var(--border)'>"
         "<span class='bt-meta'>Monitoring &amp; screening only — not investment "
-        "advice. You supply the judgement on the science.</span></div>",
+        "advice. You supply the judgement on the science.<br>"
+        "Data: yfinance · SEC EDGAR · ClinicalTrials.gov · openFDA · RSS</span></div>",
         unsafe_allow_html=True)
