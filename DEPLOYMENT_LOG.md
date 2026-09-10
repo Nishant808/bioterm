@@ -359,3 +359,30 @@ ticket can briefly show that ticker with the previous name's price until the nex
 interaction (the `st.rerun()` in the delete handler aborts before the ticket
 re-seeds). Self-corrects on any ticket change; not worth fighting the
 "remember my manual price edit" behaviour over.
+
+### 2026-09-10 — session 5, live create_portfolio ImportError (commit `1166eb4`)
+
+Testing `bbe72b7` on the live app: page loads fine, but **＋ new** →
+`create_portfolio` threw `ImportError` on `from .db import ... pf_portfolios`
+(portfolio.py:195). The live `bioterm.db` in Cloud's `sys.modules` predates the
+`pf_portfolios` / `pf_trades` tables (session 5's `ea576ef` rebuild-marker was a
+comment-only edit and evidently never triggered a real reinstall). Raw-SQL reads
+(`list_portfolios`, `get_trades`) survived it because they don't need the Table
+object and are wrapped in try/except; the writes don't.
+
+Fix: `bioterm.portfolio` now declares its **own** `pf_portfolios` / `pf_trades`
+`Table` objects on a private `MetaData` and builds every insert/delete/upsert
+from those. It's always a fresh import, so those symbols are always current.
+SQLAlchemy emits SQL by name → a separate MetaData is fine. Only `get_engine` /
+`bulk_upsert` / `read_sql` (stable since the first cloud deploy) are still
+imported from `bioterm.db`. `bioterm.db` keeps its copies for
+`init_db()`/`create_all()`.
+
+This push **also changes `requirements.txt`** (real line edit, not just the
+marker comment) to force a genuine full rebuild. Verified locally: 40 tests +
+full CRUD roundtrip against Neon. Live verification pending the rebuild.
+
+**Lesson:** the rebuild-marker trick only works if Streamlit Cloud actually
+re-runs `pip install` — a pure comment change may not count. When a page needs a
+*new* symbol from a long-lived module (`bioterm.db`, `_shared`), either put the
+code in the page / a fresh module, or make a substantive `requirements.txt` edit.
