@@ -40,6 +40,11 @@ private repo `Nishant808/bioterm`.
 - `_ui.py` owns the theme CSS (injected every run — Streamlit drops prior-page markup),
   the palette (`ACCENT/POS/NEG/WARN`, `PHASE_COLORS`, `SMA_COLORS`), `plotly_layout()`,
   and components: `eyebrow()`, `stat_strip()`, `signal_dot()`, `sentiment_word()`.
+- **Deploy gotcha:** Streamlit Cloud does a *fast* reboot on a `.py`-only push and keeps
+  imported helper modules (`_shared`, `_ui`) in `sys.modules`. If a page imports a
+  brand-new symbol from `_shared`/`_ui`, it ImportErrors on the live app until a full
+  rebuild. **When you add a cross-page helper, also bump the `rebuild-marker` line in
+  `requirements.txt`** to force a clean container rebuild.
 - News sentiment: `_shared.sentiment_df(days)` / `sentiment_series(ticker, days)`.
 - No repeated disclaimer on pages — it lives once in the sidebar footer.
 
