@@ -26,16 +26,18 @@ if not plist:
 
 pcol = st.columns([2.4, 1, 1, 1])
 names = {p["id"]: p["name"] for p in plist}
-sel = pcol[0].selectbox("portfolio", list(names), format_func=lambda i: names[i],
+ids = list(names)
+want = st.session_state.pop("_pf_sel", None)
+sel = pcol[0].selectbox("portfolio", ids, format_func=lambda i: names[i],
+                        index=ids.index(want) if want in ids else 0,
                         label_visibility="collapsed")
 with pcol[1].popover("＋ new", use_container_width=True):
-    nn = st.text_input("name", "Strategy B", key="pf_new_name")
+    nn = st.text_input("name", f"Strategy {chr(65 + len(plist))}", key="pf_new_name")
     nc = st.number_input("starting cash ($)", 1000.0, 100_000_000.0, 100_000.0,
                          step=10_000.0, key="pf_new_cash")
     if st.button("create", type="primary", key="pf_new_go"):
-        newid = store.pf_create(nn, nc)
+        st.session_state["_pf_sel"] = store.pf_create(nn, nc)
         st.cache_data.clear()
-        st.session_state["_pf_sel"] = newid
         st.rerun()
 if pcol[2].button("↺ reset", use_container_width=True,
                   help="wipe all trades in this portfolio, keep the cash setting"):
@@ -69,10 +71,9 @@ stat_strip([
 
 # ------------------------------------------------------------------ equity curve
 if not trades.empty:
-    held = tuple(sorted(pf.positions(trades)["ticker"].tolist() +
-                        trades["ticker"].str.upper().unique().tolist()))
+    held = tuple(sorted(set(trades["ticker"].str.upper())))
     start = pd.to_datetime(trades["ts"]).min().strftime("%Y-%m-%d")
-    ph = price_hist(tuple(set(held)), start)
+    ph = price_hist(held, start)
     curve = pf.equity_curve(trades, ph, cash_start)
     if len(curve) >= 3:
         fig = go.Figure()
