@@ -75,16 +75,17 @@ def test_equity_curve_runs():
     assert abs(c.iloc[0]["equity"] - 10_000) < 1e-6
 
 
-def test_store_roundtrip():
+def test_crud_roundtrip():
     from bioterm.db import init_db
-    from bioterm import store
 
     init_db()
-    pid = store.pf_create("Test Strat", 50_000)
-    store.pf_add_trade(pid, "ggg", "BUY", 10, 5.0, 1.0, "hi", ts=BASE)
-    tr = store.pf_get_trades(pid)
+    pid = pf.create_portfolio("Test Strat", 50_000)
+    pf.add_trade(pid, "ggg", "BUY", 10, 5.0, 1.0, "hi", ts=BASE)
+    tr = pf.get_trades(pid)
     assert len(tr) == 1 and tr.iloc[0]["ticker"] == "GGG"
-    store.pf_reset(pid)
-    assert store.pf_get_trades(pid).empty
-    store.pf_delete(pid)
-    assert pid not in {p["id"] for p in store.pf_list()}
+    m = pf.mark_to_market(tr, {"GGG": 6.0}, 50_000)
+    assert m["cash"] == 50_000 - 51  # 10*5 + 1 fee
+    pf.reset_portfolio(pid)
+    assert pf.get_trades(pid).empty
+    pf.delete_portfolio(pid)
+    assert pid not in {p["id"] for p in pf.list_portfolios()}

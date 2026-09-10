@@ -1,9 +1,15 @@
-"""Paper-trading portfolio maths — positions, cash, equity curve, P&L.
+"""Paper-trading portfolio — maths (pure) + blotter CRUD.
 
-Pure functions over a trade blotter (a DataFrame of BUY/SELL rows) plus prices.
-Average-cost method, long-only. Simulated fills; no real orders anywhere.
+Positions/cash/equity are *derived* from a trade blotter (BUY/SELL rows) plus
+prices. Average-cost method, long-only. Simulated fills; no real orders anywhere.
+
+Lives in its own module (not ``store.py``) so the Streamlit Cloud dashboard always
+imports it fresh — a fast reboot keeps old modules in ``sys.modules``.
 """
 from __future__ import annotations
+
+import re
+from datetime import datetime, timezone
 
 import pandas as pd
 
@@ -159,3 +165,80 @@ def validate_trade(trades: pd.DataFrame, cash_start: float, ticker: str, side: s
     else:
         return "side must be BUY or SELL"
     return None
+
+
+# ================================================================= blotter CRUD
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _slug(name: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")[:28]
+    return s or "portfolio"
+
+
+def list_portfolios() -> list[dict]:
+    from .db import read_sql
+    try:
+        df = read_sql("SELECT * FROM pf_portfolios ORDER BY created_at")
+    except Exception:  # noqa: BLE001
+        return []
+    return df.to_dict("records") if not df.empty else []
+
+
+def ensure_default() -> str:
+    pl = list_portfolios()
+    return pl[0]["id"] if pl else create_portfolio("Strategy A", 100_000.0)
+
+
+def create_portfolio(name: str, cash_start: float = 100_000.0) -> str:
+    from .db import bulk_upsert, pf_portfolios
+    base = _slug(name)
+    existing = {p["id"] for p in list_portfolios()}
+    pid, i = base, 2
+    while pid in existing:
+        pid = f"{base}-{i}"
+        i += 1
+    bulk_upsert(pf_portfolios, [{"id": pid, "name": (name or pid).strip(),
+                                 "cash_start": float(cash_start),
+                                 "created_at": _now()}])
+    return pid
+
+
+def delete_portfolio(pid: str) -> None:
+    from .db import get_engine, pf_portfolios, pf_trades
+    with get_engine().begin() as conn:
+        conn.execute(pf_trades.delete().where(pf_trades.c.portfolio_id == pid))
+        conn.execute(pf_portfolios.delete().where(pf_portfolios.c.id == pid))
+
+
+def reset_portfolio(pid: str) -> None:
+    from .db import get_engine, pf_trades
+    with get_engine().begin() as conn:
+        conn.execute(pf_trades.delete().where(pf_trades.c.portfolio_id == pid))
+
+
+def get_trades(pid: str) -> pd.DataFrame:
+    from .db import read_sql
+    try:
+        return read_sql("SELECT * FROM pf_trades WHERE portfolio_id = :p ORDER BY ts, id",
+                        {"p": pid})
+    except Exception:  # noqa: BLE001
+        return pd.DataFrame()
+
+
+def add_trade(pid: str, ticker: str, side: str, qty: float, price: float,
+              fees: float = 0.0, note: str = "", ts: datetime | None = None) -> None:
+    from .db import get_engine, pf_trades
+    with get_engine().begin() as conn:
+        conn.execute(pf_trades.insert(), [{
+            "portfolio_id": pid, "ts": ts or _now(),
+            "ticker": ticker.strip().upper(), "side": side.upper(),
+            "qty": float(qty), "price": float(price), "fees": float(fees or 0.0),
+            "note": (note or "").strip()}])
+
+
+def delete_trade(trade_id: int) -> None:
+    from .db import get_engine, pf_trades
+    with get_engine().begin() as conn:
+        conn.execute(pf_trades.delete().where(pf_trades.c.id == int(trade_id)))

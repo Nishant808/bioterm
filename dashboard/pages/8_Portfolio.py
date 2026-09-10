@@ -9,20 +9,45 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from _shared import last_close_all, price_hist, scores_df, universe_df
+from _shared import scores_df, universe_df
 from _ui import ACCENT, MUTED, NEG, POS, eyebrow, page_setup, plotly_layout, stat_strip
 from bioterm import portfolio as pf
-from bioterm import store
+from bioterm.db import read_sql
 
 page_setup("Paper-Trading Desk",
            "simulated fills at the last daily close · long-only · no real orders — "
            "for testing strategies")
 
+
+# self-contained cached readers (kept local so this page never depends on a
+# helper symbol that a Streamlit Cloud fast-reboot might not have reloaded yet)
+@st.cache_data(ttl=120)
+def last_close_all() -> dict:
+    df = read_sql(
+        "SELECT p.ticker, p.close FROM prices p JOIN "
+        "(SELECT ticker, MAX(date) d FROM prices GROUP BY ticker) m "
+        "ON p.ticker = m.ticker AND p.date = m.d")
+    return dict(zip(df["ticker"], df["close"])) if not df.empty else {}
+
+
+@st.cache_data(ttl=120)
+def price_hist(tickers: tuple[str, ...], start: str) -> pd.DataFrame:
+    if not tickers:
+        return pd.DataFrame(columns=["ticker", "date", "close"])
+    ph = ",".join(f":t{i}" for i in range(len(tickers)))
+    params = {f"t{i}": t for i, t in enumerate(tickers)}
+    params["s"] = start
+    df = read_sql(f"SELECT ticker, date, close FROM prices "
+                  f"WHERE ticker IN ({ph}) AND date >= :s ORDER BY date", params)
+    if not df.empty:
+        df["date"] = pd.to_datetime(df["date"])
+    return df
+
 # ------------------------------------------------------------------ portfolio bar
-plist = store.pf_list()
+plist = pf.list_portfolios()
 if not plist:
-    store.pf_ensure_default()
-    plist = store.pf_list()
+    pf.ensure_default()
+    plist = pf.list_portfolios()
 
 pcol = st.columns([2.4, 1, 1, 1])
 names = {p["id"]: p["name"] for p in plist}
@@ -36,22 +61,22 @@ with pcol[1].popover("＋ new", use_container_width=True):
     nc = st.number_input("starting cash ($)", 1000.0, 100_000_000.0, 100_000.0,
                          step=10_000.0, key="pf_new_cash")
     if st.button("create", type="primary", key="pf_new_go"):
-        st.session_state["_pf_sel"] = store.pf_create(nn, nc)
+        st.session_state["_pf_sel"] = pf.create_portfolio(nn, nc)
         st.cache_data.clear()
         st.rerun()
 if pcol[2].button("↺ reset", use_container_width=True,
                   help="wipe all trades in this portfolio, keep the cash setting"):
-    store.pf_reset(sel)
+    pf.reset_portfolio(sel)
     st.cache_data.clear()
     st.rerun()
 if pcol[3].button("🗑 delete", use_container_width=True, disabled=len(plist) <= 1):
-    store.pf_delete(sel)
+    pf.delete_portfolio(sel)
     st.cache_data.clear()
     st.rerun()
 
 port = next(p for p in plist if p["id"] == sel)
 cash_start = float(port["cash_start"])
-trades = store.pf_get_trades(sel)
+trades = pf.get_trades(sel)
 last_px = last_close_all()
 summ = pf.mark_to_market(trades, last_px, cash_start)
 
@@ -142,7 +167,7 @@ with book_col:
             })
         last_id = int(tb.sort_values("ts").iloc[-1]["id"])
         if st.button("↶ undo last trade"):
-            store.pf_delete_trade(last_id)
+            pf.delete_trade(last_id)
             st.cache_data.clear()
             st.rerun()
         st.download_button("⬇ CSV", tb.to_csv(index=False),
@@ -187,7 +212,7 @@ with ticket_col:
             ts = pd.Timestamp(tdate)
             if ts.normalize() >= pd.Timestamp.today().normalize():
                 ts = pd.Timestamp.now(tz="UTC").tz_localize(None)
-            store.pf_add_trade(sel, tk, side, qty, price, fees, note,
+            pf.add_trade(sel, tk, side, qty, price, fees, note,
                                ts=ts.to_pydatetime())
             st.cache_data.clear()
             st.toast(f"{side} {qty:g} {tk} @ ${price:.2f}")
