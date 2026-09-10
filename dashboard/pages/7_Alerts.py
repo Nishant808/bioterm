@@ -4,13 +4,14 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from _shared import alerts_fired_df, disclaimer, news_df, sidebar_freshness
+from _shared import alerts_fired_df, news_df
+from _ui import NEG, POS, page_setup
 from bioterm import alerts as alert_engine
 from bioterm import store
 
-st.title("Alerts")
-disclaimer()
-sidebar_freshness()
+page_setup("Alerts",
+           "rules run every fast refresh · new hits land in the log (and Telegram, "
+           "if configured)")
 
 rules = alert_engine.get_rules()
 
@@ -37,12 +38,17 @@ tab_now, tab_hist = st.tabs(["🔔 firing now", "🗂 history"])
 with tab_now:
     firing = alert_engine.evaluate(rules)
     if not firing:
-        st.success("Nothing trips the current rules right now. 🎣")
+        st.success("Nothing trips the current rules right now.")
     else:
         st.caption(f"{len(firing)} firing")
         for a in firing:
             icon = {"score move": "📈", "catalyst soon": "🗓", "headline": "📰"}[a["kind"]]
-            st.markdown(f"{icon} **{a['ticker']}** · _{a['kind']}_ — {a['detail']}")
+            st.markdown(
+                f"<div class='bt-card'><div class='bt-row'>"
+                f"<span><span class='bt-tk'>{a['ticker']}</span> "
+                f"<span class='bt-meta'>{icon} {a['kind']}</span></span></div>"
+                f"<div class='bt-meta' style='color:var(--text)'>{a['detail']}</div></div>",
+                unsafe_allow_html=True)
 
 with tab_hist:
     hist = alerts_fired_df()

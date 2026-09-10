@@ -5,12 +5,11 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from _shared import (PLOTLY_TEMPLATE, catalysts_df, disclaimer, fundamentals_row,
-                     money, prices_df, scores_df, sidebar_freshness)
+from _shared import (catalysts_df, fundamentals_row, money, prices_df, scores_df,
+                     sentiment_df)
+from _ui import WARN, eyebrow, page_setup, plotly_layout
 
-st.title("Compare")
-disclaimer()
-sidebar_freshness()
+page_setup("Compare", "2–4 names side by side")
 
 scores = scores_df()
 if scores.empty:
@@ -39,14 +38,14 @@ for tk in picks:
 cats = catalysts_df()
 cats = cats[(cats["ticker"].isin(picks)) & (cats["months_away"].between(-0.5, 6))]
 for _, c in cats.iterrows():
-    fig.add_vline(x=c["date"], line=dict(color="#ffd54f", dash="dot", width=1))
-fig.update_layout(template=PLOTLY_TEMPLATE, height=420, legend=dict(orientation="h"),
-                  margin=dict(l=10, r=10, t=30, b=10),
-                  title=f"price, rebased to 0% at start of window · gold = catalysts ≤6mo",
-                  yaxis_title="% change")
+    fig.add_vline(x=c["date"], line=dict(color=WARN, dash="dot", width=1))
+fig.update_layout(**plotly_layout(
+    height=400, yaxis_title="% change",
+    title="price, rebased to 0% at start of window · amber = catalysts ≤6mo"))
 st.plotly_chart(fig, use_container_width=True)
 
 # ---------------------------------------------------------------- score + fundamentals
+sig = sentiment_df(14).set_index("ticker")
 rows = []
 for tk in picks:
     s = scores[scores["ticker"] == tk].iloc[0]
@@ -59,17 +58,18 @@ for tk in picks:
         "rank": int(s["rank"]),
         "momentum": round(float(s["momentum"]), 2),
         "catalyst": round(float(s["catalyst"]), 2),
-        "newsflow": round(float(s["newsflow"]), 2),
+        "news flow": round(float(s["newsflow"]), 2),
+        "news sentiment": round(float(sig.loc[tk, "signal"]), 2) if tk in sig.index else None,
         "risk": round(float(s["risk"]), 2),
         "catalysts ≤6mo": ncat,
         "market cap": money(f.get("market_cap")),
         "cash": money(f.get("cash")),
-        "runway (Q)": None if f.get("runway_quarters") is None else round(float(f["runway_quarters"] or 0), 1),
+        "runway (Q)": None if f.get("runway_quarters") is None
+        else round(float(f["runway_quarters"] or 0), 1),
     })
 st.dataframe(pd.DataFrame(rows).set_index("ticker").T, use_container_width=True)
 
-# ---------------------------------------------------------------- catalyst timelines
-st.subheader("catalyst calendars")
+eyebrow("catalyst calendars")
 cc = catalysts_df()
 cc = cc[(cc["ticker"].isin(picks)) & (cc["months_away"].between(-0.5, 9))].sort_values("date")
 if cc.empty:

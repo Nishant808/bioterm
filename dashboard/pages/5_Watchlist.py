@@ -4,19 +4,13 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from _shared import disclaimer, scores_df, sidebar_freshness, universe_df
+from _shared import scores_df, universe_df
+from _ui import page_setup
 from bioterm import store
 
-st.title("Watchlist")
-disclaimer()
-sidebar_freshness()
-
-st.markdown(
-    "Your conviction (1–5) is **your** read on whether the science works. It multiplies "
-    "the Focus Score (`config/settings.yml → score.conviction_map`), so a 5-conviction "
-    "name with a near catalyst rises to the top; a 1 sinks. **Edits save to the database** "
-    "and are picked up on the next `bioterm score` (or the next cloud refresh)."
-)
+page_setup("Watchlist",
+           "your conviction (1–5) multiplies the Focus Score · edits persist to the "
+           "database and apply on the next refresh")
 
 current = pd.DataFrame(store.get_watchlist())
 if current.empty:

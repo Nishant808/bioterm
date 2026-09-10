@@ -175,6 +175,73 @@ def universe_df() -> pd.DataFrame:
     return q("SELECT * FROM securities ORDER BY ticker")
 
 
+# --------------------------------------------------------------- news sentiment
+@st.cache_data(ttl=120)
+def sentiment_df(days: int = 14) -> pd.DataFrame:
+    """Per-ticker news-sentiment factor over the last `days`.
+
+    ``signal`` ∈ [-1, 1] blends VADER tone with the biotech event-tag tilt
+    (topline / approval / CRL / clinical hold …). It is the raw driver behind the
+    Focus Score's *newsflow* component, surfaced here on its own.
+    """
+    import numpy as np
+
+    raw = q(
+        "SELECT ticker, tickers_csv, published, sentiment, event_score, event_tags "
+        "FROM news WHERE published >= :cut",
+        {"cut": (pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=days)).strftime(
+            "%Y-%m-%d %H:%M:%S")},
+    )
+    if raw.empty:
+        return pd.DataFrame(columns=["ticker", "n", "sent", "tilt", "signal",
+                                     "pos", "neg", "last"])
+    raw["published"] = pd.to_datetime(raw["published"], utc=True, errors="coerce")
+    # explode multi-ticker headlines so each name gets credit
+    raw["tk"] = raw["tickers_csv"].fillna(raw["ticker"]).fillna("").str.split(",")
+    ex = raw.explode("tk")
+    ex["tk"] = ex["tk"].str.strip()
+    ex = ex[ex["tk"] != ""]
+    ex["sentiment"] = pd.to_numeric(ex["sentiment"], errors="coerce").fillna(0.0)
+    ex["event_score"] = pd.to_numeric(ex["event_score"], errors="coerce").fillna(0.0)
+
+    rows = []
+    for tk, g in ex.groupby("tk"):
+        tilt = float(g["event_score"].sum())
+        sent = float(g["sentiment"].mean())
+        signal = max(-1.0, min(1.0, 0.45 * sent + 0.55 * np.tanh(tilt / 2.0)))
+        rows.append({
+            "ticker": tk, "n": int(len(g)),
+            "sent": round(sent, 3), "tilt": round(tilt, 2),
+            "signal": round(signal, 3),
+            "pos": int((g["event_score"] > 0).sum()),
+            "neg": int((g["event_score"] < 0).sum()),
+            "last": g["published"].max(),
+        })
+    return pd.DataFrame(rows).sort_values("signal", ascending=False)
+
+
+@st.cache_data(ttl=120)
+def sentiment_series(ticker: str, days: int = 60) -> pd.DataFrame:
+    """Daily headline count + 7-day rolling mean sentiment for one ticker."""
+    df = q(
+        "SELECT published, sentiment, event_score FROM news "
+        "WHERE (tickers_csv LIKE :like OR ticker = :t) AND published >= :cut",
+        {"like": f"%{ticker}%", "t": ticker,
+         "cut": (pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=days)).strftime(
+             "%Y-%m-%d %H:%M:%S")},
+    )
+    if df.empty:
+        return df
+    df["published"] = pd.to_datetime(df["published"], utc=True, errors="coerce")
+    df["day"] = df["published"].dt.floor("D")
+    df["sentiment"] = pd.to_numeric(df["sentiment"], errors="coerce")
+    daily = df.groupby("day").agg(n=("sentiment", "size"),
+                                  sent=("sentiment", "mean"),
+                                  tilt=("event_score", "sum")).reset_index()
+    daily["sent_7d"] = daily["sent"].rolling(7, min_periods=1).mean()
+    return daily
+
+
 def _loads(s):
     try:
         return json.loads(s) if s else {}
@@ -199,22 +266,6 @@ def money(x) -> str:
     return f"${x:.0f}"
 
 
-def runway_badge(q_left) -> str:
-    if q_left is None or pd.isna(q_left):
-        return "runway: unknown"
-    q_left = float(q_left)
-    tag = "🟢" if q_left >= 8 else "🟡" if q_left >= 4 else "🔴"
-    return f"{tag} runway ≈ {q_left:.1f} quarters"
-
-
-def disclaimer() -> None:
-    st.caption(
-        "⚠️ BioTerm is a **monitoring & screening** tool, not investment advice. "
-        "The Focus Score ranks *attention*, not conviction — you supply the judgement "
-        "on the science. Data: yfinance · SEC EDGAR · ClinicalTrials.gov · openFDA · RSS."
-    )
-
-
 def trigger_workflow(which: str = "ingest-fast.yml") -> tuple[bool, str]:
     """Fire a GitHub Actions workflow_dispatch. Needs GH_DISPATCH_TOKEN + GH_REPO
     ('owner/repo') in secrets/env; returns (ok, message)."""
@@ -237,23 +288,3 @@ def trigger_workflow(which: str = "ingest-fast.yml") -> tuple[bool, str]:
         return False, f"GitHub returned {r.status_code}: {r.text[:200]}"
     except Exception as exc:  # noqa: BLE001
         return False, str(exc)
-
-
-def sidebar_freshness() -> None:
-    stt = ingest_status()
-    if stt.empty:
-        st.sidebar.info("No ingest runs yet. Run `bioterm ingest`.")
-    else:
-        last = pd.to_datetime(stt["finished_at"]).max()
-        st.sidebar.caption(f"data as of **{last:%Y-%m-%d %H:%M} UTC**")
-        latest = stt.sort_values("started_at").groupby("job").last()
-        errs = latest[latest["status"] == "error"].index.tolist()
-        if errs:
-            st.sidebar.warning("latest run failed for: " + ", ".join(errs))
-
-    import os
-
-    if os.environ.get("GH_DISPATCH_TOKEN") and os.environ.get("GH_REPO"):
-        if st.sidebar.button("↻ refresh data now"):
-            ok, msg = trigger_workflow("ingest-fast.yml")
-            (st.sidebar.success if ok else st.sidebar.error)(msg)

@@ -5,16 +5,15 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from _shared import (PLOTLY_TEMPLATE, catalysts_df, disclaimer, scores_df,
-                     sidebar_freshness, universe_df)
+from _shared import catalysts_df, scores_df, universe_df
+from _ui import eyebrow, page_setup, plotly_layout
 from bioterm import store
 
 CATALYST_TYPES = ["pdufa", "adcom", "fda_action", "phase3_readout", "phase2_readout",
                   "phase1_readout", "data_presentation", "earnings", "other"]
 
-st.title("Catalyst Calendar")
-disclaimer()
-sidebar_freshness()
+page_setup("Catalyst Calendar",
+           "every dated catalyst in the horizon — trial readouts, FDA actions, earnings")
 
 with st.expander("＋ Pin a catalyst you know about (PDUFA, AdCom, expected readout)"):
     with st.form("add_cat_cal", clear_on_submit=True):
@@ -72,16 +71,15 @@ if not view.empty:
     fig = px.scatter(
         view, x="date", y="ticker", color="type", symbol="confidence",
         size=view["focus_score"].fillna(0.1).clip(lower=0.05) * 10,
-        hover_data=["title", "months_away", "source"],
-        template=PLOTLY_TEMPLATE, height=max(320, 22 * view["ticker"].nunique()))
+        hover_data=["title", "months_away", "source"])
     fig.add_vline(x=pd.Timestamp.today(), line=dict(color="#fff", dash="dot"))
-    fig.update_layout(margin=dict(l=10, r=10, t=30, b=10), legend=dict(orientation="h"))
+    fig.update_layout(**plotly_layout(height=max(320, 22 * view["ticker"].nunique())))
     st.plotly_chart(fig, use_container_width=True)
 
 # ---------------------------------------------------------------- month buckets
 view = view.assign(month=view["date"].dt.strftime("%Y-%m"))
 for month, grp in view.groupby("month"):
-    st.subheader(pd.to_datetime(month + "-01").strftime("%B %Y"))
+    eyebrow(pd.to_datetime(month + "-01").strftime("%B %Y"))
     st.dataframe(
         grp[["date", "ticker", "type", "title", "confidence", "source", "rank", "url"]]
         .rename(columns={"rank": "focus_rank"}),
