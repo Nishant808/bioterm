@@ -255,3 +255,27 @@ gitignored) with the last 55-ticker refresh in it.
 | Compare | 2–4 ticker rebased price overlay + side-by-side metrics + catalyst list |
 | Alerts | **editable rules (persisted)**, firing-now tab, **history tab w/ delivery status** |
 | sidebar (all pages) | data-freshness, **↻ refresh data now** (if GH secrets set) |
+
+---
+
+## 2026-09-10 — session 4: dashboard redesign
+
+Live at https://bioterm.streamlit.app (redeploys on push).
+
+- **Design system** `dashboard/_ui.py`: Inter (UI) + JetBrains Mono (tickers/numbers),
+  refined dark palette, metric cards, `page_setup()` compact header, `stat_strip()`,
+  `eyebrow()`, shared `plotly_layout()`. Streamlit "Fork/Deploy/footer" chrome hidden.
+  Disclaimer: 3-line-paragraph-on-every-page → one sidebar footer line.
+- **News-sentiment factor** surfaced everywhere: `_shared.sentiment_df()` (14d signal =
+  VADER tone × biotech event-tag tilt, −1…+1) + `sentiment_series()` (60d). Shows on
+  Home (KPI + focus-table column), Stocks in Focus (column + breakdown row), Stock
+  Detail (header strip + a "News & sentiment" tab with a 60-day chart), News Firehose
+  (summary bar), Compare (row).
+- Score breakdown on Stocks in Focus: raw `st.write(dict)` JSON → formatted card.
+- CI cadence recorded for reference: `ingest-fast` `0 11-23/2 * * *`, `ingest-full` `0 9 * * *`.
+- Gotcha: the theme CSS must be injected on **every** page run — Streamlit discards a
+  prior page's `st.markdown` on navigation, so a once-per-session guard leaves pages 2+
+  unstyled.
+- `.streamlit/config.toml`: `font = "sans serif"` (CSS handles the mono bits); palette
+  updated; dropped `runOnSave`.
+- Backend untouched — 34 tests green.

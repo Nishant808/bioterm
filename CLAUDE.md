@@ -20,10 +20,24 @@ src/bioterm/
   pipeline.py   run_job() wrapper (logs to ingest_runs) + run_full_refresh()
   scheduler.py  APScheduler (local "always on")
   cli.py        typer:  init-db · universe · ingest · score · alerts · status · serve · scheduler
-dashboard/      Streamlit — _shared.py (cached DB reads) + Home.py + pages/1..7
-.github/workflows/  ingest-fast.yml (*/30)  ·  ingest-full.yml (0 6,13,21)
+dashboard/      Streamlit — _ui.py (theme + page_setup + components),
+                _shared.py (cached DB reads + sentiment_df), Home.py + pages/1..7
+.github/workflows/  ingest-fast.yml (0 11-23/2)  ·  ingest-full.yml (0 9)  — private-repo cadence
 deploy/         Dockerfile, compose, launchd, setup-github.sh, README.md
 ```
+
+**Deployed:** dashboard = https://bioterm.streamlit.app (Streamlit Cloud, auto-redeploys
+on push to main) · DB = Neon Postgres (secret) · ingestion = GitHub Actions on the
+private repo `Nishant808/bioterm`.
+
+## Dashboard UI
+
+- Every page starts with `from _ui import page_setup, …; page_setup(title, subtitle)`.
+- `_ui.py` owns the theme CSS (injected every run — Streamlit drops prior-page markup),
+  the palette (`ACCENT/POS/NEG/WARN`, `PHASE_COLORS`, `SMA_COLORS`), `plotly_layout()`,
+  and components: `eyebrow()`, `stat_strip()`, `signal_dot()`, `sentiment_word()`.
+- News sentiment: `_shared.sentiment_df(days)` / `sentiment_series(ticker, days)`.
+- No repeated disclaimer on pages — it lives once in the sidebar footer.
 
 ## Focus Score
 
