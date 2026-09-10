@@ -12,8 +12,39 @@ import re
 from datetime import datetime, timezone
 
 import pandas as pd
+from sqlalchemy import (Column, DateTime, Float, Integer, MetaData, String,
+                        Table, Text)
 
 TRADE_COLS = ["ts", "ticker", "side", "qty", "price", "fees", "note"]
+
+# The paper-trading tables are declared here as well as in ``bioterm.db`` (same
+# names/columns). On Streamlit Cloud a fast reboot keeps the already-imported
+# ``bioterm.db`` in ``sys.modules`` — if that copy predates the pf tables, a lazy
+# ``from .db import pf_portfolios`` blows up. This module is always a fresh import,
+# so CRUD builds its statements from these local Table objects instead. SQLAlchemy
+# generates SQL by name, so a foreign MetaData is fine for insert/delete/upsert.
+_meta = MetaData()
+
+pf_portfolios = Table(
+    "pf_portfolios", _meta,
+    Column("id", String(32), primary_key=True),
+    Column("name", String(80)),
+    Column("cash_start", Float),
+    Column("created_at", DateTime),
+)
+
+pf_trades = Table(
+    "pf_trades", _meta,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("portfolio_id", String(32), index=True),
+    Column("ts", DateTime),
+    Column("ticker", String(16), index=True),
+    Column("side", String(4)),
+    Column("qty", Float),
+    Column("price", Float),
+    Column("fees", Float),
+    Column("note", Text),
+)
 
 
 def _norm(trades: pd.DataFrame) -> pd.DataFrame:
@@ -192,7 +223,7 @@ def ensure_default() -> str:
 
 
 def create_portfolio(name: str, cash_start: float = 100_000.0) -> str:
-    from .db import bulk_upsert, pf_portfolios
+    from .db import bulk_upsert
     base = _slug(name)
     existing = {p["id"] for p in list_portfolios()}
     pid, i = base, 2
@@ -206,14 +237,14 @@ def create_portfolio(name: str, cash_start: float = 100_000.0) -> str:
 
 
 def delete_portfolio(pid: str) -> None:
-    from .db import get_engine, pf_portfolios, pf_trades
+    from .db import get_engine
     with get_engine().begin() as conn:
         conn.execute(pf_trades.delete().where(pf_trades.c.portfolio_id == pid))
         conn.execute(pf_portfolios.delete().where(pf_portfolios.c.id == pid))
 
 
 def reset_portfolio(pid: str) -> None:
-    from .db import get_engine, pf_trades
+    from .db import get_engine
     with get_engine().begin() as conn:
         conn.execute(pf_trades.delete().where(pf_trades.c.portfolio_id == pid))
 
@@ -229,7 +260,7 @@ def get_trades(pid: str) -> pd.DataFrame:
 
 def add_trade(pid: str, ticker: str, side: str, qty: float, price: float,
               fees: float = 0.0, note: str = "", ts: datetime | None = None) -> None:
-    from .db import get_engine, pf_trades
+    from .db import get_engine
     with get_engine().begin() as conn:
         conn.execute(pf_trades.insert(), [{
             "portfolio_id": pid, "ts": ts or _now(),
@@ -239,6 +270,6 @@ def add_trade(pid: str, ticker: str, side: str, qty: float, price: float,
 
 
 def delete_trade(trade_id: int) -> None:
-    from .db import get_engine, pf_trades
+    from .db import get_engine
     with get_engine().begin() as conn:
         conn.execute(pf_trades.delete().where(pf_trades.c.id == int(trade_id)))
