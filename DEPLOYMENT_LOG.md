@@ -397,3 +397,11 @@ having anyway (Streamlit's recommended file-watcher).
 line in `requirements.txt` (or reboot from the Streamlit Cloud console) — the
 `rebuild-marker` comment alone is not enough. And prefer keeping page-critical
 code in the page file or a brand-new module so a restart isn't needed at all.
+
+**✅ Verified live (2026-09-10, after `a5629b3` deployed):** on
+https://bioterm.streamlit.app/Portfolio — `＋ new` creates a book (no
+ImportError), a BUY writes to Neon and shows in Positions + Blotter, a full
+page reload lands back on the last-used book with the position intact, and
+`🗑 delete` falls back cleanly to the first book. Test data removed from Neon
+afterwards (only `Strategy A`, 0 trades; `pf_last_book` → `strategy-a`).
+**Both of the user's reported issues are fixed and confirmed in production.**
