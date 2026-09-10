@@ -43,6 +43,25 @@ def price_hist(tickers: tuple[str, ...], start: str) -> pd.DataFrame:
         df["date"] = pd.to_datetime(df["date"])
     return df
 
+
+def _get_last_book() -> str | None:
+    try:
+        df = read_sql("SELECT value FROM app_meta WHERE key = 'pf_last_book'")
+    except Exception:  # noqa: BLE001
+        return None
+    if df.empty:
+        return None
+    return str(df.iloc[0]["value"]).strip().strip('"') or None
+
+
+def _set_last_book(pid: str) -> None:
+    from datetime import datetime, timezone
+
+    from bioterm.db import app_meta, bulk_upsert
+    bulk_upsert(app_meta, [{"key": "pf_last_book", "value": f'"{pid}"',
+                            "updated_at": datetime.now(timezone.utc)}])
+
+
 # ------------------------------------------------------------------ portfolio bar
 plist = pf.list_portfolios()
 if not plist:
@@ -51,14 +70,19 @@ if not plist:
 
 names = {p["id"]: p["name"] for p in plist}
 ids = list(names)
-# remember the chosen portfolio in the URL so a reload / bookmark keeps it
-_want = st.session_state.pop("_pf_new", None) or st.query_params.get("pf")
+# restore the last-used book: fresh-create > URL (?pf=) > DB memory > first
+_want = (st.session_state.pop("_pf_new", None)
+         or st.query_params.get("pf")
+         or _get_last_book())
 
 pcol = st.columns([2.4, 1, 1, 1])
 sel = pcol[0].selectbox("portfolio", ids, format_func=lambda i: names[i],
                         index=ids.index(_want) if _want in ids else 0,
                         label_visibility="collapsed")
 st.query_params["pf"] = sel
+if st.session_state.get("_pf_last_written") != sel:
+    _set_last_book(sel)
+    st.session_state["_pf_last_written"] = sel
 
 with pcol[1].popover("＋ new", use_container_width=True):
     nn = st.text_input("name", f"Strategy {chr(65 + len(plist))}", key="pf_new_name")
