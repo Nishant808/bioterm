@@ -304,3 +304,19 @@ A separate strategy-testing tab — **not** connected to the research pages.
 - Verified against Neon: backdated 3-trade strategy → equity curve Aug 2→Sep 6,
   +16.9%, realised $500, unrealised $16.4k, all P&L/returns correct.
 - 40 tests green.
+
+### 2026-09-10 — session 5 follow-up: fixed live ImportError on pages/8
+
+The Paper-Trading page ImportError'd on Streamlit Cloud (`from _shared import
+last_close_all …`). Cause: Cloud's fast reboot on a `.py`-only push keeps already-
+imported helper modules (`_shared`, `bioterm.store`) in `sys.modules`, so a page
+referencing a **new** symbol in one of them fails — even though `pages/` is
+re-scanned for new files.
+
+Fix (commit `97a84f7`):
+- moved the blotter CRUD from `store.py` into **`bioterm/portfolio.py`** (a brand-new
+  module → always a fresh import); `store.py` reverted.
+- `pages/8_Portfolio.py` now imports only `bioterm.portfolio` + `_shared.scores_df`/
+  `universe_df` (present since v1) + two tiny cached readers defined inline.
+- `requirements.txt` gained a `rebuild-marker` line — bump it whenever you add a
+  cross-page helper so Cloud does a full container rebuild.
