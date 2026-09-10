@@ -1,11 +1,14 @@
 # Runtime deps for the Streamlit Community Cloud dashboard.
 # (The dashboard adds ./src to sys.path, so the `bioterm` package itself is not
 #  installed here — only its third-party dependencies. Keep in sync with pyproject.toml.)
-# rebuild-marker: 2026-09-10 portfolio.3  (bump to force a full Streamlit Cloud rebuild
-# when only .py files changed — otherwise stale helper modules stay in sys.modules.
-# portfolio.3: live bioterm.db was stale (no pf_portfolios/pf_trades symbols) →
-# create_portfolio ImportError'd; full rebuild reloads db.py with the pf tables.)
+# rebuild-marker: 2026-09-10 portfolio.4
+# NB: a comment-only edit here does NOT reliably make Streamlit Cloud re-run the
+# install — it keeps imported modules (bioterm.*, _shared, _ui) in sys.modules on a
+# fast reboot. When a page needs a *new* symbol from a long-lived module, change a
+# real dependency line below (that forces a clean rebuild) or reboot from the
+# Streamlit Cloud console.
 sqlalchemy>=2.0
+watchdog>=4.0               # faster + more reliable file-watch on Streamlit Cloud
 psycopg[binary]>=3.1        # Postgres driver for the cloud DATABASE_URL
 yfinance>=0.2.40
 pandas>=2.1
