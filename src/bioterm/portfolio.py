@@ -105,8 +105,8 @@ def equity_curve(trades: pd.DataFrame, price_hist: pd.DataFrame,
     t = _norm(trades)
     if t.empty:
         return pd.DataFrame(columns=["date", "equity", "invested", "cash"])
-    ph = price_hist.copy()
-    ph["date"] = pd.to_datetime(ph["date"])
+    ph = (price_hist.copy() if price_hist is not None
+          else pd.DataFrame(columns=["ticker", "date", "close"]))
     start = t["ts"].min().normalize()
     days = pd.date_range(start, pd.Timestamp.today().normalize(), freq="D")
 
@@ -115,8 +115,12 @@ def equity_curve(trades: pd.DataFrame, price_hist: pd.DataFrame,
     t["day"] = t["ts"].dt.normalize()
 
     # price lookup: forward-fill each ticker's close onto every calendar day
-    pivot = (ph.pivot_table(index="date", columns="ticker", values="close")
-             .reindex(days).ffill())
+    if ph.empty:
+        pivot = pd.DataFrame(index=days)
+    else:
+        ph["date"] = pd.to_datetime(ph["date"])
+        pivot = (ph.pivot_table(index="date", columns="ticker", values="close")
+                 .reindex(days).ffill())
 
     out = []
     for d in days:

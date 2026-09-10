@@ -1,7 +1,7 @@
 # Runtime deps for the Streamlit Community Cloud dashboard.
 # (The dashboard adds ./src to sys.path, so the `bioterm` package itself is not
 #  installed here — only its third-party dependencies. Keep in sync with pyproject.toml.)
-# rebuild-marker: 2026-09-10 portfolio  (bump to force a full Streamlit Cloud rebuild
+# rebuild-marker: 2026-09-10 portfolio.2  (bump to force a full Streamlit Cloud rebuild
 # when only .py files changed — otherwise stale helper modules stay in sys.modules)
 sqlalchemy>=2.0
 psycopg[binary]>=3.1        # Postgres driver for the cloud DATABASE_URL
