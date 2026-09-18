@@ -16,43 +16,66 @@ ingest:
   news_google_per_ticker: true          # add a Google News RSS query per ticker
   news_lookback_days: 45                # drop news older than this on ingest
   edgar_forms: ["8-K", "424B5", "S-1", "S-3"]   # filings that matter for catalysts/dilution
+  edgar_risk_forms: ["10-K", "10-Q"]            # checked for going-concern language
+  risk_flag_max_fetches: 20                     # filing bodies downloaded per EDGAR run
 
 sentiment:
-  # high-signal biotech event tags -> weight used by the news-flow sub-score
+  # High-signal biotech event tags -> weight used by the news-flow sub-score.
+  # Each phrase below is matched with common verb-tense / plural variants
+  # automatically (process/sentiment.py:_compile_phrase) - you don't need a
+  # separate entry for "meet"/"meets"/"met"/"meeting" or "endpoint"/"endpoints".
   positive_events:
     topline: 1.0
     "meets primary endpoint": 1.0
+    "hits primary endpoint": 1.0
     "statistically significant": 0.8
     approval: 1.0
     approved: 1.0
+    "regulatory approval": 1.0
+    "fda clearance": 0.9
     "breakthrough therapy": 0.9
     "fast track": 0.6
     "orphan drug": 0.5
     "priority review": 0.8
     "accelerated approval": 0.9
+    "wins approval": 1.0
+    "grants approval": 1.0
     partnership: 0.6
     collaboration: 0.5
     licensing: 0.5
     acquisition: 0.8
     "positive data": 0.9
     "positive results": 0.9
+    "positive topline": 1.0
+    "durable response": 0.7
+    "objective response rate": 0.6
   negative_events:
     "clinical hold": -1.0
     "complete response letter": -1.0
     crl: -1.0
     "failed to meet": -1.0
     "did not meet": -1.0
+    "fails to meet": -1.0
     "missed primary endpoint": -1.0
     discontinued: -0.9
     "trial halted": -0.9
     "safety concern": -0.7
+    "safety signal": -0.7
     "adverse event": -0.5
+    "black box warning": -0.8
     "going concern": -0.8
     "offering of": -0.4
     "priced offering": -0.5
     dilution: -0.4
     layoffs: -0.5
     restructuring: -0.4
+    "trial failure": -0.9
+    "study failure": -0.9
+    futility: -0.8
+    "voted against approval": -0.9
+    "fda rejects": -1.0
+    "rejected by fda": -1.0
+    "regulatory delay": -0.5
 
 score:
   weights:
@@ -72,6 +95,7 @@ score:
     trial_completion: 0.5
   risk:
     runway_quarters_floor: 4.0   # below this, cash-runway risk ramps toward 1.0
+    going_concern_weight: 0.35   # added to risk when the latest 10-K/10-Q flags going-concern doubt
   conviction_map:                # watchlist conviction (1-5) -> score multiplier
     1: 0.6
     2: 0.8
