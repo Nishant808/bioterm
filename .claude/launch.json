@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "bioterm-dashboard",
-      "runtimeExecutable": ".venv/bin/streamlit",
-      "runtimeArgs": ["run", "dashboard/Home.py", "--server.port", "8501", "--server.headless", "true"],
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["-m", "streamlit", "run", "dashboard/Home.py", "--server.port", "8501", "--server.headless", "true"],
       "port": 8501
     }
   ]

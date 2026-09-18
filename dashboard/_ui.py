@@ -29,7 +29,17 @@ PLOTLY_TEMPLATE = "plotly_dark"
 
 
 def plotly_layout(**over) -> dict:
-    """Shared Plotly layout — transparent bg, faint grid, Inter font."""
+    """Shared Plotly layout - transparent bg, faint grid, Inter font, a themed
+    hover card, and a short easing transition so a re-drawn trace (a new window,
+    a filter change) interpolates instead of popping.
+
+    ``title``, if passed, may be a plain string - it gets the shared muted/small
+    styling automatically. A textless ``title={"font": ...}`` is never set on
+    the base layout: Plotly.js renders that as a literal "undefined" label
+    when a figure has no title text at all, which most of this app's charts
+    don't (a page names the chart with ``eyebrow()`` or a heading instead).
+    """
+    title = over.pop("title", None)
     base = dict(
         template=PLOTLY_TEMPLATE,
         paper_bgcolor="rgba(0,0,0,0)",
@@ -40,20 +50,48 @@ def plotly_layout(**over) -> dict:
         yaxis=dict(gridcolor=BORDER, zerolinecolor=BORDER),
         legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0,
                     bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
-        hoverlabel=dict(font=dict(family="Inter, sans-serif", size=12)),
-        title=dict(font=dict(size=13, color=MUTED)),
+        hoverlabel=dict(bgcolor=SURFACE_2, bordercolor=BORDER,
+                        font=dict(family="Inter, sans-serif", size=12, color=TEXT)),
+        hoverdistance=40,
+        modebar=dict(bgcolor="rgba(0,0,0,0)", color=MUTED, activecolor=ACCENT),
+        transition=dict(duration=350, easing="cubic-in-out"),
     )
+    if title is not None:
+        base["title"] = dict(text=title, font=dict(size=13, color=MUTED)) \
+            if isinstance(title, str) else title
     base.update(over)
     return base
 
 
+# Fetched once per page render via a <link>, not a stylesheet @import - an
+# @import blocks CSS parsing until the imported file round-trips, while a link
+# tag is discovered immediately and fetched in parallel with everything else.
+_FONTS = """
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+"""
+
 _CSS = f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-
 :root {{
   --bg:{BG}; --surface:{SURFACE}; --surface2:{SURFACE_2}; --border:{BORDER};
   --text:{TEXT}; --muted:{MUTED}; --accent:{ACCENT};
+  --pos:{POS}; --neg:{NEG}; --warn:{WARN};
+  --radius: 10px; --radius-sm: 7px;
+  --ease: cubic-bezier(.4,0,.2,1);
+  --fast: 120ms; --normal: 180ms;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.28);
+  --shadow-md: 0 10px 28px -12px rgba(0,0,0,.55);
+  --ring: 0 0 0 3px rgba(91,157,255,.22);
+}}
+
+@media (prefers-reduced-motion: reduce) {{
+  *, *::before, *::after {{
+    animation-duration: .001ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important; scroll-behavior: auto !important;
+  }}
 }}
 
 html, body, [class*="css"], .stApp, [data-testid="stMarkdownContainer"] {{
@@ -61,6 +99,15 @@ html, body, [class*="css"], .stApp, [data-testid="stMarkdownContainer"] {{
   color: var(--text);
 }}
 .stApp {{ background: var(--bg); }}
+
+/* thin, unobtrusive scrollbars that match the theme instead of the OS default */
+* {{ scrollbar-width: thin; scrollbar-color: var(--border) transparent; }}
+*::-webkit-scrollbar {{ width: 9px; height: 9px; }}
+*::-webkit-scrollbar-track {{ background: transparent; }}
+*::-webkit-scrollbar-thumb {{
+  background: var(--border); border-radius: 8px; border: 2px solid var(--bg);
+}}
+*::-webkit-scrollbar-thumb:hover {{ background: #344052; }}
 
 /* tighten the giant default top padding, cap width for readability */
 .block-container, [data-testid="stMainBlockContainer"] {{
@@ -85,10 +132,16 @@ code, kbd, pre, .mono,
 code {{ background: var(--surface2); color: var(--accent);
        padding: .05rem .3rem; border-radius: 4px; font-size: .82em; }}
 
-/* metric -> card */
+/* metric -> card, with a gentle lift on hover so a KPI strip feels alive
+   without any element re-animating itself on every script rerun */
 [data-testid="stMetric"] {{
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: 10px; padding: .7rem .9rem;
+  border-radius: var(--radius); padding: .7rem .9rem;
+  transition: border-color var(--normal) var(--ease), transform var(--normal) var(--ease),
+              box-shadow var(--normal) var(--ease);
+}}
+[data-testid="stMetric"]:hover {{
+  border-color: #34405a; transform: translateY(-1px); box-shadow: var(--shadow-md);
 }}
 [data-testid="stMetricLabel"] {{ white-space: normal !important; overflow: visible; }}
 [data-testid="stMetricLabel"] p {{
@@ -109,30 +162,68 @@ hr {{ margin: 1.1rem 0 !important; border-color: var(--border) !important; opaci
   color: var(--muted) !important; font-size: .8rem;
 }}
 
-/* dataframe */
-[data-testid="stDataFrame"] {{ border:1px solid var(--border); border-radius:10px; }}
+/* dataframe - the grid itself is a canvas widget (can't reach individual rows
+   with CSS), so the polish is the frame around it: a soft border that warms
+   up on hover, matching the rest of the "card" language on the page */
+[data-testid="stDataFrame"] {{
+  border:1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+  transition: border-color var(--normal) var(--ease);
+}}
+[data-testid="stDataFrame"]:hover {{ border-color: #34405a; }}
 
-/* tabs */
+/* tabs - a smooth colour + underline transition instead of an instant snap */
 .stTabs [data-baseweb="tab-list"] {{ gap: .25rem; border-bottom:1px solid var(--border); }}
 .stTabs [data-baseweb="tab"] {{
   font-size:.86rem; padding:.4rem .7rem; color:var(--muted);
+  transition: color var(--fast) var(--ease);
 }}
+.stTabs [data-baseweb="tab"]:hover {{ color: var(--text); }}
 .stTabs [aria-selected="true"] {{ color: var(--text) !important; }}
+.stTabs [data-baseweb="tab-highlight"] {{ transition: left var(--normal) var(--ease), width var(--normal) var(--ease); }}
 
-/* buttons */
+/* buttons - a quick lift on hover, a light press-down on click; primary
+   buttons get a soft accent glow instead of a hard colour swap */
 .stButton button, .stDownloadButton button {{
-  border-radius: 8px; border:1px solid var(--border); font-weight:500;
-  font-size:.84rem;
+  border-radius: var(--radius-sm); border:1px solid var(--border); font-weight:500;
+  font-size:.84rem; transition: border-color var(--fast) var(--ease),
+    transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease),
+    background-color var(--fast) var(--ease);
 }}
+.stButton button:hover, .stDownloadButton button:hover {{
+  border-color: var(--accent); transform: translateY(-1px);
+}}
+.stButton button:active, .stDownloadButton button:active {{ transform: translateY(0); }}
 .stButton button[kind="primary"] {{ border-color: var(--accent); }}
+.stButton button[kind="primary"]:hover {{ box-shadow: var(--ring); }}
 
 /* links */
-a, a:visited {{ color: var(--accent); text-decoration: none; }}
+a, a:visited {{ color: var(--accent); text-decoration: none; transition: color var(--fast) var(--ease); }}
 a:hover {{ text-decoration: underline; }}
+
+/* a calmer, on-brand focus ring for keyboard users instead of the browser default */
+button:focus-visible, a:focus-visible, [role="tab"]:focus-visible,
+input:focus-visible, [data-baseweb="select"]:focus-within {{
+  outline: none !important; box-shadow: var(--ring) !important; border-radius: var(--radius-sm);
+}}
+
+/* inputs - the accent border fades in on focus rather than snapping */
+[data-baseweb="input"], [data-baseweb="select"] > div, [data-baseweb="base-input"] {{
+  transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease) !important;
+}}
 
 /* sidebar */
 [data-testid="stSidebar"] {{ background: #0d1219; border-right:1px solid var(--border); }}
-[data-testid="stSidebarNav"] a {{ font-size:.88rem; }}
+[data-testid="stSidebarNav"] a {{
+  font-size:.88rem; border-radius: var(--radius-sm);
+  transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease);
+}}
+[data-testid="stSidebarNav"] a:hover {{ background: var(--surface); }}
+
+/* expanders - hover feedback on the header, matching the button/card language */
+[data-testid="stExpander"] summary {{
+  border-radius: var(--radius-sm); transition: background-color var(--fast) var(--ease);
+}}
+[data-testid="stExpander"] summary:hover {{ background: var(--surface); }}
 
 /* --- custom helpers --- */
 .bt-brand {{ display:flex; align-items:center; gap:.5rem; font-weight:700;
@@ -140,18 +231,36 @@ a:hover {{ text-decoration: underline; }}
 .bt-sub {{ color:var(--muted); font-size:.82rem; margin:-.1rem 0 1rem; }}
 .bt-eyebrow {{ text-transform:uppercase; letter-spacing:.08em; font-size:.7rem;
   color:var(--muted); font-weight:600; margin:1.2rem 0 .4rem; }}
-.bt-card {{ background:var(--surface); border:1px solid var(--border);
-  border-radius:10px; padding:.7rem .85rem; margin-bottom:.5rem; }}
+
+/* a fast, opacity-only fade - subtle enough that a filter/selection change
+   re-rendering these cards reads as "smooth", never as "look, animation" */
+@keyframes bt-in {{ from {{ opacity: 0; }} to {{ opacity: 1; }} }}
+.bt-card {{
+  background:var(--surface); border:1px solid var(--border);
+  border-radius: var(--radius); padding:.7rem .85rem; margin-bottom:.5rem;
+  transition: border-color var(--normal) var(--ease), transform var(--normal) var(--ease),
+              box-shadow var(--normal) var(--ease);
+  animation: bt-in 220ms var(--ease) both;
+}}
+.bt-card:hover {{ border-color: #34405a; transform: translateY(-1px); box-shadow: var(--shadow-md); }}
 .bt-row {{ display:flex; justify-content:space-between; gap:.6rem; align-items:baseline; }}
 .bt-tk {{ font-family:'JetBrains Mono',monospace; font-weight:600; color:var(--text); }}
 .bt-meta {{ color:var(--muted); font-size:.76rem; }}
 .bt-pos {{ color:{POS}; }} .bt-neg {{ color:{NEG}; }} .bt-warn {{ color:{WARN}; }}
 .bt-dot {{ display:inline-block; width:.55rem; height:.55rem; border-radius:50%;
   vertical-align:middle; }}
+.bt-dot.live {{ animation: bt-pulse 2.2s var(--ease) infinite; }}
+@keyframes bt-pulse {{
+  0%, 100% {{ opacity: 1; }} 50% {{ opacity: .35; }}
+}}
 .bt-statline {{ display:flex; flex-wrap:wrap; gap:.35rem .1rem; align-items:baseline;
   margin:.2rem 0 1rem; }}
-.bt-stat {{ background:var(--surface); border:1px solid var(--border);
-  border-radius:7px; padding:.28rem .6rem; font-size:.82rem; white-space:nowrap; }}
+.bt-stat {{
+  background:var(--surface); border:1px solid var(--border);
+  border-radius: var(--radius-sm); padding:.28rem .6rem; font-size:.82rem; white-space:nowrap;
+  transition: border-color var(--fast) var(--ease), transform var(--fast) var(--ease);
+}}
+.bt-stat:hover {{ border-color: #34405a; transform: translateY(-1px); }}
 .bt-stat b {{ font-family:'JetBrains Mono',monospace; font-weight:600; margin-left:.3rem; }}
 .bt-stat .k {{ color:var(--muted); text-transform:uppercase; letter-spacing:.04em;
   font-size:.68rem; }}
@@ -160,13 +269,13 @@ a:hover {{ text-decoration: underline; }}
 
 
 def page_setup(title: str, subtitle: str | None = None, icon: str = "") -> None:
-    """Inject the theme, render the sidebar, and the compact page header.
+    """Inject fonts + theme, render the sidebar, and the compact page header.
 
     The CSS must go in on every page run — Streamlit drops a prior page's
     ``st.markdown`` output when you navigate, so a once-per-session guard would
     leave pages 2+ unstyled.
     """
-    st.markdown(_CSS, unsafe_allow_html=True)
+    st.markdown(_FONTS + _CSS, unsafe_allow_html=True)
     _sidebar()
     head = f"{icon} {title}".strip()
     st.markdown(f"<div class='bt-brand'>{head}</div>", unsafe_allow_html=True)
@@ -227,10 +336,13 @@ def _sidebar() -> None:
     stt = ingest_status()
     if not stt.empty:
         last = pd.to_datetime(stt["finished_at"]).max()
-        sb.markdown(f"<span class='bt-meta'>updated {last:%b %d · %H:%M} UTC</span>",
-                    unsafe_allow_html=True)
         latest = stt.sort_values("started_at").groupby("job").last()
         errs = latest[latest["status"] == "error"].index.tolist()
+        dot_color = NEG if errs else POS
+        sb.markdown(
+            f"<span class='bt-dot live' style='background:{dot_color}'></span> "
+            f"<span class='bt-meta'>updated {last:%b %d · %H:%M} UTC</span>",
+            unsafe_allow_html=True)
         if errs:
             sb.warning("last run failed: " + ", ".join(errs), icon="⚠️")
 
