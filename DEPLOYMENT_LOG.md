@@ -405,3 +405,98 @@ page reload lands back on the last-used book with the position intact, and
 `🗑 delete` falls back cleanly to the first book. Test data removed from Neon
 afterwards (only `Strategy A`, 0 trades; `pf_last_book` → `strategy-a`).
 **Both of the user's reported issues are fixed and confirmed in production.**
+
+### 2026-09-18 — session 6: replacing fragile regex/lexicon parsing with better deterministic logic
+
+User asked to explore where "intelligent judgement" (the TypeSafe/Jev skill) could
+stand in for fragile parsing, then said to implement the fixes **without** making
+the project depend on a live TypeSafe/AI API call at runtime — use the idea as a
+design aid, ship plain, testable Python. All four opportunities + one bonus were
+implemented; no new runtime dependency, no API key, no network call added except
+the bonus (which was already going to need one - see below).
+
+1. **`process/catalysts.py` - date/type extraction from news rewritten.**
+   `extract_date()` was 5 regexes tried in a fixed order; it missed anything
+   without an explicit 4-digit year and mis-clamped invalid days (Feb 30 -> None
+   instead of Feb 28). Rewrote as a dispatch table of ~14 small (pattern, handler)
+   pairs tried most-specific-first, added: month+day with no year (resolves to
+   the nearest future occurrence), day-month-year (UK order), quarter/half tied
+   to "this/next year" instead of digits, "early/mid/late next year", "by
+   year-end", "later this year", and a proper last-day-of-month clamp
+   (`calendar.monthrange`) instead of a blind `min(day, 28)`. `today` is now an
+   injectable parameter so the new phrasing is unit-tested against a fixed date
+   rather than whatever day the suite happens to run on.
+   `classify_type()` was first-match-wins over a fixed keyword list order, so a
+   headline mentioning both "Phase 3" and "PDUFA" always got tagged by whichever
+   category happened to be checked first - not necessarily what the headline was
+   actually about. Rewrote as weighted scoring (PDUFA/AdCom score far higher than
+   the generic "topline/data/results" bucket that appears in nearly every
+   headline), so the rarer, more decisive signal wins regardless of list order.
+   26 tests in `test_catalysts.py` (was 5), including the exact "PDUFA date of
+   March 15" (no year) and "back half of next year" cases from the design doc.
+
+2. **`process/sentiment.py` - event-tag lexicon matching rewritten.**
+   The old matcher was a literal `\bphrase\b` per configured phrase - "misses
+   primary endpoint" (a genuine trial failure) didn't match the configured
+   "missed primary endpoint", and "meets primary endpoints" (plural) didn't
+   match "meets primary endpoint" either, both scoring as neutral. Each phrase
+   now compiles into a small regex family: a hand-picked verb-inflection table
+   (meet/meets/met/meeting, miss/misses/missed/missing, ~20 more) covers tense,
+   a generic pluralizer (with the "-y -> -ies" case handled) covers the last
+   word, and an optional article/possessive between words catches "met THE
+   primary endpoint". Also fixed a **new** collision this surfaced: a bare
+   positive phrase ("approval") that's a literal substring of a longer negative
+   one ("voted against approval") was double-counting - added `_drop_shadowed_hits`
+   so the longer, more specific phrase wins. Compiled patterns are cached keyed
+   by the lexicon's own content (not forever - settings.yml still hot-reloads)
+   so a `run()` over thousands of headlines isn't recompiling ~50 regexes per
+   row. Expanded `config/settings.yml`'s lexicon with ~20 more real phrasings
+   (avoided the "complete response" ambiguity - it's a positive oncology term
+   *and* a substring of the negative "complete response letter", so no bare
+   entry was added for it). `test_sentiment.py`, 10 new tests.
+
+3. **`ingest/news.py` - headline -> ticker attribution.**
+   `_match_tickers` returned every matching ticker in arbitrary DB-row order;
+   `_add()` took `matched[0]` as the article's primary ticker, which was
+   essentially a coin flip for a sector digest naming several companies. Now
+   scores each candidate by specificity - the ticker symbol itself beats a
+   name alias, and a hit in the title beats one only in the summary - so the
+   primary `ticker` column is the company the headline is actually about;
+   `tickers_csv` still keeps every match. New test in `test_ingest_smoke.py`.
+
+4. **`ingest/clinical.py` - Phase 1 "housekeeping" filter.**
+   `_NON_CATALYST_RE` dropped any Phase 1 study whose title mentioned PK/DDI/
+   bioequivalence, full stop - but PK is a routine secondary endpoint even on a
+   genuine first-in-human efficacy study ("...for Relative Bioavailability and
+   Preliminary Efficacy of Drug X in Patients With NASH"), which is exactly the
+   kind of early read the catalyst calendar exists to catch. A housekeeping
+   keyword now only drops the trial if there's no efficacy-language override
+   ("in patients", "advanced", "dose-expansion"...) and no real disease named in
+   `conditions` (as opposed to "Healthy Volunteers" / "Hepatic Impairment").
+   New `test_clinical.py`, 8 tests.
+
+5. **Bonus: going-concern detection (a capability that didn't exist before).**
+   The risk overlay only ever looked at filing *form type* (424B5/S-1/S-3) for
+   dilution risk - it never read a filing's own text, so the "going concern"
+   weight already sitting in the sentiment lexicon had no way to fire against
+   the source that actually states it (the 10-K/10-Q audit opinion, not a news
+   headline). Added `edgar_risk_forms: ["10-K","10-Q"]` to ingestion (reuses the
+   *same* submissions API call `edgar.run()` already makes - no extra network
+   round-trip there), then bounded-fetches (`risk_flag_max_fetches: 20`/run) the
+   **single latest** 10-K or 10-Q body per ticker not already checked (idempotent
+   by accession id - a re-run never re-downloads a filing it's already scored),
+   strips the HTML and checks for the standardized ASC 205-40 phrase
+   ("...raise substantial doubt about the Company's ability to continue as a
+   going concern") with a short negation window so a filing that *resolved* its
+   going-concern doubt doesn't get flagged. This is one case where plain phrase
+   matching is genuinely reliable, not fragile - auditors use near-verbatim
+   boilerplate, unlike a news headline. New table `filing_risk_flags`; new risk
+   component `going_concern_weight: 0.35` in `score.py`; new row in the Stocks
+   in Focus decomposition. `test_edgar_risk.py`, 6 tests (pure-function match/
+   negation, bounded+idempotent fetch via a mocked `get_bytes`, and a DB-level
+   test that a flagged ticker's focus score comes out lower than a clean one's).
+
+**78 tests passing** (was 53). Nothing in this session added a runtime
+dependency, an API key, or a live network call beyond the going-concern body
+fetch (which reuses existing ingest budget/backoff conventions). Not pushed -
+CLAUDE.md says don't push without being asked.
