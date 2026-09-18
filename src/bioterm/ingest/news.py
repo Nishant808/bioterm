@@ -58,12 +58,28 @@ def _build_matchers() -> dict[str, dict]:
     return out
 
 
-def _match_tickers(text: str, matchers: dict[str, dict]) -> list[str]:
-    hits = []
+def _match_tickers(title: str, summary: str, matchers: dict[str, dict]) -> list[str]:
+    """Every universe ticker this headline mentions, most-likely-the-subject
+    first.
+
+    A sector digest can legitimately name several companies; the first one in
+    ``matchers`` iteration order (an arbitrary DB row order) isn't necessarily
+    the one the article is *about*. Rank by how specific the match is instead:
+    the ticker symbol itself beats a name alias, and a hit in the title beats
+    one that only shows up in the (often boilerplate-heavy) summary.
+    """
+    scored: list[tuple[str, int]] = []
     for tk, m in matchers.items():
-        if m["ticker_re"].search(text) or any(nr.search(text) for nr in m["name_res"]):
-            hits.append(tk)
-    return hits
+        if m["ticker_re"].search(title):
+            scored.append((tk, 4))
+        elif any(nr.search(title) for nr in m["name_res"]):
+            scored.append((tk, 3))
+        elif m["ticker_re"].search(summary):
+            scored.append((tk, 2))
+        elif any(nr.search(summary) for nr in m["name_res"]):
+            scored.append((tk, 1))
+    scored.sort(key=lambda h: -h[1])
+    return [tk for tk, _ in scored]
 
 
 def _mk_id(url: str) -> str:
@@ -121,7 +137,7 @@ def run(tickers: list[str] | None = None, google: bool | None = None) -> dict:
         if pub and pub < cutoff:
             return
         matched = [forced_ticker] if forced_ticker else _match_tickers(
-            f" {title} {summary} ", matchers
+            f" {title} ", f" {summary} ", matchers
         )
         matched = [t for t in matched if t in tickset]
         if not matched:

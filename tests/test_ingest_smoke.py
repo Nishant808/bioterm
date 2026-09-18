@@ -26,10 +26,33 @@ def test_news_matcher_precision(monkeypatch):
 
     matchers = news_mod._build_matchers()
     # "Beam Benefits" (an unrelated insurance product) must NOT match BEAM
-    assert news_mod._match_tickers(" Principal buys Beam Benefits today ", matchers) == []
+    assert news_mod._match_tickers(" Principal buys Beam Benefits today ", "", matchers) == []
     # real mentions do match
-    assert "BEAM" in news_mod._match_tickers(" Beam Therapeutics posts data ", matchers)
-    assert "MRNA" in news_mod._match_tickers(" $MRNA jumps on RSV win ", matchers)
+    assert "BEAM" in news_mod._match_tickers(" Beam Therapeutics posts data ", "", matchers)
+    assert "MRNA" in news_mod._match_tickers(" $MRNA jumps on RSV win ", "", matchers)
+
+
+def test_news_matcher_prefers_title_and_ticker_over_summary_alias(monkeypatch):
+    """A sector digest can legitimately name several companies; the primary
+    (first) match should be the one the headline is actually about, not
+    whichever ticker happens to sort first in the DB."""
+    init_db()
+    bulk_upsert(securities, [
+        {"ticker": "BEAM", "name": "Beam Therapeutics Inc", "is_watchlist": 0},
+        {"ticker": "MRNA", "name": "Moderna Inc", "is_watchlist": 0},
+    ])
+    from bioterm.ingest import news as news_mod
+
+    matchers = news_mod._build_matchers()
+    # MRNA is named explicitly by ticker in the title; Beam is only a passing
+    # mention buried in the summary - MRNA must be ranked first.
+    hits = news_mod._match_tickers(
+        " $MRNA prices its new RSV shot ",
+        " Analysts also flagged Beam Therapeutics as a peer to watch ",
+        matchers,
+    )
+    assert hits[0] == "MRNA"
+    assert set(hits) == {"MRNA", "BEAM"}
 
 
 def test_sentiment_event_tagging():
