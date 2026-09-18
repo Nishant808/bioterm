@@ -19,7 +19,9 @@ beautifulsoup4>=4.12
 lxml>=5.0
 vaderSentiment>=3.3.2
 apscheduler>=3.10
-streamlit>=1.36
+streamlit>=1.63        # bumped from 1.36 - also forces Streamlit Cloud's fast-reboot
+                       # cache of already-imported modules (_ui, _shared, bioterm.*)
+                       # to actually clear; see CLAUDE.md's deploy gotcha
 plotly>=5.22
 pyyaml>=6.0
 typer>=0.12
