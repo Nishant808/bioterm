@@ -132,7 +132,9 @@ def _parse(study: dict, ticker: str) -> dict | None:
     }
 
 
-# Phase 1 studies that are almost never share-price catalysts
+# Phase 1 studies that are almost never share-price catalysts - pure clin-pharm
+# housekeeping (PK/DDI/bioequivalence/food-effect), usually run in healthy
+# volunteers rather than the disease population.
 _NON_CATALYST_RE = re.compile(
     r"pharmacokinetic|drug[- ]drug interaction|\bDDI\b|bioequivalence|bioavailability|"
     r"food[- ]effect|mass balance|QT[c]? |thorough qt|relative bioavailability|"
@@ -140,6 +142,31 @@ _NON_CATALYST_RE = re.compile(
     r"renal impairment|excretion|lactati|breast milk",
     re.I,
 )
+
+# ...but PK is also a routine secondary endpoint on genuine first-in-human
+# efficacy studies ("A Study of Drug X for Relative Bioavailability and
+# Preliminary Efficacy in Patients With NASH"). A housekeeping keyword alone
+# shouldn't drop a title that also names a real disease population - that's
+# exactly the kind of early read the catalyst calendar exists to catch.
+_EFFICACY_OVERRIDE_RE = re.compile(
+    r"\bin (?:adult |pediatric )?patients\b|\badvanced\b|\bmetastatic\b|\brelapsed\b|"
+    r"\brefractory\b|\bdose[- ]expansion\b|\bpreliminary efficacy\b|\befficacy\b|"
+    r"\bobjective response\b|\btumou?rs?\b|\bfirst[- ]in[- ]human\b",
+    re.I,
+)
+
+# A named condition that is really just the PK special-population label, not
+# a disease - shouldn't count as "this trial studies a real patient population".
+_NON_DISEASE_CONDITIONS = {
+    "healthy", "healthy volunteers", "healthy volunteer", "healthy participants",
+    "healthy subjects", "hepatic impairment", "renal impairment",
+    "hepatic insufficiency", "renal insufficiency",
+}
+
+
+def _names_real_condition(conditions: str) -> bool:
+    parts = [c.strip().lower() for c in (conditions or "").split(";") if c.strip()]
+    return any(p not in _NON_DISEASE_CONDITIONS for p in parts)
 
 
 def _keep(row: dict) -> bool:
@@ -154,9 +181,14 @@ def _keep(row: dict) -> bool:
     }
     if not active:
         return False
-    # drop clin-pharm Phase 1 housekeeping studies (keep all Phase 2/3)
+    # drop clin-pharm Phase 1 housekeeping studies (keep all Phase 2/3) unless
+    # the title's own efficacy language, or a real named condition, says this
+    # is actually a read on the sponsor's asset in patients, not lab housekeeping
     if ph in ("P1", "EP1") and _NON_CATALYST_RE.search(row.get("title", "") or ""):
-        return False
+        title = row.get("title", "") or ""
+        if not (_EFFICACY_OVERRIDE_RE.search(title)
+                or _names_real_condition(row.get("conditions", ""))):
+            return False
     return True
 
 
