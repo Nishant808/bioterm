@@ -305,6 +305,19 @@ pf_trades = Table(
     Column("note", Text),
 )
 
+# One row per (most recently) checked 10-K/10-Q: does its own text carry a
+# going-concern doubt paragraph? id reuses the filing's own accession id, so a
+# re-run naturally skips a filing already checked (see edgar.py).
+filing_risk_flags = Table(
+    "filing_risk_flags", metadata,
+    Column("id", String(64), primary_key=True),
+    Column("ticker", String(16), index=True),
+    Column("form", String(16)),
+    Column("filed_date", Date),
+    Column("going_concern", Integer, default=0),   # 0/1 - portable across SQLite/Postgres
+    Column("checked_at", DateTime),
+)
+
 
 _ENGINE: Engine | None = None
 

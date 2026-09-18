@@ -1,5 +1,6 @@
 """SEC EDGAR ingestion: ticker->CIK map, XBRL company facts (cash / R&D / net income),
-and recent material filings (8-K, S-1/S-3, 424B5) -> ``filings`` table.
+recent material filings (8-K, S-1/S-3, 424B5) -> ``filings`` table, and a
+going-concern-language check on the latest 10-K/10-Q -> ``filing_risk_flags``.
 
 No API key. EDGAR requires a descriptive User-Agent (set BIOTERM_SEC_USER_AGENT).
 Rate limit: <=10 req/s per IP - we stay well under with throttling.
@@ -8,14 +9,16 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from functools import lru_cache
 
 import pandas as pd
+from bs4 import BeautifulSoup
 
 from ..config import CACHE_DIR, load_settings
-from ..db import bulk_upsert, filings, read_sql, securities
-from ..httpx_util import get_json
+from ..db import bulk_upsert, filing_risk_flags, filings, read_sql, securities
+from ..httpx_util import get_bytes, get_json
 from ..universe import universe_tickers
 
 log = logging.getLogger("bioterm.ingest.edgar")
@@ -152,7 +155,7 @@ def recent_filings(cik10: str, ticker: str, forms: list[str]) -> list[dict]:
     df = pd.DataFrame(recent)
     if df.empty or "form" not in df:
         return []
-    df = df[df["form"].isin(forms)].head(40)
+    df = df[df["form"].isin(forms)].head(60)
     now = datetime.now(timezone.utc)
     rows = []
     for _, r in df.iterrows():
@@ -181,17 +184,107 @@ def recent_filings(cik10: str, ticker: str, forms: list[str]) -> list[dict]:
     return rows
 
 
+# ---------------------------------------------------------------- going concern
+#
+# ASC 205-40 / PCAOB AS 2415 boilerplate is close to verbatim across filers:
+# "...raise substantial doubt about the Company's ability to continue as a
+# going concern." A bounded-gap phrase match is a genuinely reliable detector
+# here (unlike a news headline, an auditor's opinion doesn't get paraphrased) -
+# the only wrinkle is a filing that *raises and then resolves* the doubt in the
+# same document ("management concluded there is no longer substantial doubt"),
+# so a short window before each hit is checked for a negation cue.
+_GOING_CONCERN_RE = re.compile(
+    r"(?:substantial\s+)?doubt\b.{0,150}?\bability\b.{0,60}?continue as a going concern",
+    re.I | re.S,
+)
+_GOING_CONCERN_NEGATION_RE = re.compile(
+    r"\bno\b|\bnot\b|\balleviat|\bresolv|\bno longer\b|\bdoes not\b", re.I
+)
+
+
+def _strip_html(raw: bytes) -> str:
+    try:
+        return BeautifulSoup(raw, "lxml").get_text(" ")
+    except Exception:  # noqa: BLE001 - malformed markup shouldn't abort the run
+        return raw.decode("utf-8", errors="ignore")
+
+
+def has_going_concern_doubt(text: str) -> bool:
+    """Does the filing's own text carry an (un-negated) going-concern paragraph?"""
+    for m in _GOING_CONCERN_RE.finditer(text or ""):
+        preceding = text[max(0, m.start() - 80):m.start()]
+        if _GOING_CONCERN_NEGATION_RE.search(preceding):
+            continue
+        return True
+    return False
+
+
+def _latest_per_ticker(rows: list[dict], forms: set[str]) -> dict[str, dict]:
+    """The single most-recently-filed row per ticker among ``forms``."""
+    out: dict[str, dict] = {}
+    for r in rows:
+        if r["form"] not in forms or not r.get("filed_date"):
+            continue
+        cur = out.get(r["ticker"])
+        if cur is None or r["filed_date"] > cur["filed_date"]:
+            out[r["ticker"]] = r
+    return out
+
+
+def check_going_concern(candidates: dict[str, dict], max_fetches: int = 20) -> int:
+    """Fetch and flag the latest 10-K/10-Q per ticker in ``candidates`` (already
+    the output of ``_latest_per_ticker``), skipping any filing already checked
+    (same accession id) so a re-run doesn't re-download it. Bounded by
+    ``max_fetches`` - one run works through the universe gradually rather than
+    downloading every filer's 10-K/10-Q body in one go."""
+    try:
+        existing = read_sql("SELECT id FROM filing_risk_flags")
+        checked_ids = set(existing["id"]) if not existing.empty else set()
+    except Exception:  # noqa: BLE001
+        checked_ids = set()
+
+    out_rows: list[dict] = []
+    budget = max_fetches
+    for tk, filing in candidates.items():
+        if budget <= 0:
+            break
+        if filing["id"] in checked_ids or not filing.get("url"):
+            continue
+        try:
+            raw = get_bytes(filing["url"], min_interval=_MIN_INTERVAL, retries=1, timeout=20)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("filing body fetch failed for %s: %s", tk, exc)
+            continue
+        budget -= 1
+        flagged = has_going_concern_doubt(_strip_html(raw))
+        out_rows.append({
+            "id": filing["id"], "ticker": tk, "form": filing["form"],
+            "filed_date": filing["filed_date"], "going_concern": int(flagged),
+            "checked_at": datetime.now(timezone.utc),
+        })
+    if out_rows:
+        bulk_upsert(filing_risk_flags, out_rows)
+    return len(out_rows)
+
+
 def run(tickers: list[str] | None = None) -> dict:
     cfg = load_settings()
     forms = cfg.get("ingest", "edgar_forms", default=["8-K", "424B5", "S-1", "S-3"])
+    risk_forms = cfg.get("ingest", "edgar_risk_forms", default=["10-K", "10-Q"])
+    max_risk_fetches = int(cfg.get("ingest", "risk_flag_max_fetches", default=20))
+    all_forms = list(dict.fromkeys([*forms, *risk_forms]))  # de-dup, keep order
     tickers = tickers or universe_tickers()
     resolved = _persist_ciks(tickers)
     log.info("EDGAR: resolved %d/%d CIKs", len(resolved), len(tickers))
 
     filing_rows: list[dict] = []
     for tk, cik in resolved.items():
-        filing_rows.extend(recent_filings(cik, tk, forms))
+        filing_rows.extend(recent_filings(cik, tk, all_forms))
     n_filings = bulk_upsert(filings, filing_rows)
 
-    log.info("EDGAR: %d filings upserted", n_filings)
-    return {"rows": n_filings, "ciks": len(resolved), "filings": n_filings}
+    candidates = _latest_per_ticker(filing_rows, set(risk_forms))
+    n_risk = check_going_concern(candidates, max_fetches=max_risk_fetches)
+
+    log.info("EDGAR: %d filings upserted, %d going-concern checks", n_filings, n_risk)
+    return {"rows": n_filings, "ciks": len(resolved), "filings": n_filings,
+            "going_concern_checks": n_risk}

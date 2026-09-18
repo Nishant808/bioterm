@@ -146,6 +146,7 @@ with cc2:
         ("Risk", ""),
         ("cash runway (quarters)", _f(obj.get("runway_quarters"))),
         ("dilution filing (75d)", "yes" if rd.get("dilution_filing") else "no"),
+        ("going concern (latest 10-K/10-Q)", "yes" if rd.get("going_concern") else "no"),
         ("negative news (21d)", _f(rd.get("negative_news"))),
     ]
     st.markdown("<div class='bt-card'>" + "".join(

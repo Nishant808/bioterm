@@ -150,11 +150,18 @@ def _newsflow_scores() -> pd.DataFrame:
 def _risk_scores(cfg) -> pd.DataFrame:
     fund = read_sql("SELECT * FROM fundamentals")
     floor = float(cfg.get("score", "risk", "runway_quarters_floor", default=4.0))
+    gc_weight = float(cfg.get("score", "risk", "going_concern_weight", default=0.35))
     dilut = read_sql(
         "SELECT DISTINCT ticker FROM filings WHERE form IN ('424B5','S-1','S-3') "
         "AND filed_date >= :cut", {"cut": str(date.today() - pd.Timedelta(days=75))}
     )
     dilut_tickers = set(dilut["ticker"]) if not dilut.empty else set()
+
+    try:
+        gc = read_sql("SELECT ticker FROM filing_risk_flags WHERE going_concern = 1")
+    except Exception:  # noqa: BLE001 - table may not exist yet on an un-migrated DB
+        gc = pd.DataFrame(columns=["ticker"])
+    going_concern_tickers = set(gc["ticker"]) if not gc.empty else set()
 
     news_df = read_sql("SELECT ticker, published, event_score FROM news")
     neg_recent: dict[str, float] = {}
@@ -184,7 +191,9 @@ def _risk_scores(cfg) -> pd.DataFrame:
             parts["runway"] = 0.0
         parts["dilution_filing"] = 0.30 if tk in dilut_tickers else 0.0
         parts["negative_news"] = min(0.40, 0.20 * float(neg_recent.get(tk, 0.0)))
-        risk = _clip01(parts["runway"] * 0.6 + parts["dilution_filing"] + parts["negative_news"])
+        parts["going_concern"] = gc_weight if tk in going_concern_tickers else 0.0
+        risk = _clip01(parts["runway"] * 0.6 + parts["dilution_filing"]
+                       + parts["negative_news"] + parts["going_concern"])
         rows.append({"ticker": tk, "risk": round(risk, 4), "risk_detail": parts,
                      "runway_quarters": None if pd.isna(runway) else float(runway)})
     return pd.DataFrame(rows, columns=cols)
