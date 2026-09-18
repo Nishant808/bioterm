@@ -10,11 +10,12 @@ from __future__ import annotations
 import json
 import logging
 import re
+import warnings
 from datetime import datetime, timezone
 from functools import lru_cache
 
 import pandas as pd
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 from ..config import CACHE_DIR, load_settings
 from ..db import bulk_upsert, filing_risk_flags, filings, read_sql, securities
@@ -204,7 +205,12 @@ _GOING_CONCERN_NEGATION_RE = re.compile(
 
 def _strip_html(raw: bytes) -> str:
     try:
-        return BeautifulSoup(raw, "lxml").get_text(" ")
+        with warnings.catch_warnings():
+            # many EDGAR "primary documents" are inline-XBRL (XHTML with XBRL
+            # tags) - bs4 warns that an XML parser would be more precise, but
+            # the plain text we need out of it comes through fine either way
+            warnings.simplefilter("ignore", category=XMLParsedAsHTMLWarning)
+            return BeautifulSoup(raw, "lxml").get_text(" ")
     except Exception:  # noqa: BLE001 - malformed markup shouldn't abort the run
         return raw.decode("utf-8", errors="ignore")
 
