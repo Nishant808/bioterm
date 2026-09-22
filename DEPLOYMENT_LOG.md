@@ -549,12 +549,28 @@ work is structure, presentation and correctness of what's shown.
     query. `news_df(3000)` only reached back a week, so the comparison was wrong.
   - "(news)" prefixes and raw catalyst keys are replaced with readable labels,
     and `-0.000` contributions are gone.
+- **Alerts page was the one slow page** (~6.5 s on every visit, warm or not):
+  `alerts.evaluate()` pulled the *entire* news table from Neon to use 3 days of it,
+  and scanned every snapshot timestamp to find the last two. It now fetches only the
+  lookback window (+1 day of slack, exact cut in pandas) and uses `LIMIT 2`. The page
+  also caches the result for 2 minutes, keyed on the rules. The new
+  `tests/test_alerts.py` turned up a **pre-existing SQLite-only bug**: the
+  previous-run lookup (`WHERE ts = :t` with a raw datetime) never matched the stored
+  text, so score-move alerts never fired on a local DB. Fixed with a Core select.
+  Postgres was unaffected.
 - **Tests:** `tests/test_dashboard.py` (AppTest renders all 9 pages on an empty and
   a seeded DB, plus deep links, the focus filter and the portfolio price-follows-
-  ticker case) and `tests/test_markup.py`. **112 passing.**
+  ticker case), `tests/test_markup.py`, `tests/test_alerts.py`. **114 passing.**
 - `plotly>=5.22` → `>=6.0` in requirements.txt/pyproject (resolved version
   unchanged, 7.0.0). It's a real dependency line, so Cloud does a clean rebuild
-  for the new theme config and the module layout.
+  for the new theme config and the module layout. Then `watchdog>=4.0` → `>=6.0`
+  (also unchanged, 6.0.0) forced a second rebuild to pick up the new
+  `bioterm.alerts`.
+- **Verified live** after the first push: all 9 pages render with no exceptions.
+  The theme is applied (bg `#0B0E14`, Inter, 26px headings, hairline metric
+  borders, SVG logo), and 200 headlines and 118 alert rows show no leaked markup.
+  First visits took 1.8–3.8 s per page. Warm visits: Overview 0.8 s, Paper
+  trading 2.5 s, Alerts 6.3–6.5 s (the fix above).
 - Local env: the venv's console scripts still pointed at `~/Desktop/cld` after the
   repo move (`uv run pytest` → "Failed to spawn") → fixed with
   `uv sync --extra dev --reinstall`.

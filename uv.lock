@@ -141,7 +141,7 @@ requires-dist = [
     { name = "tenacity", specifier = ">=8.3" },
     { name = "typer", specifier = ">=0.12" },
     { name = "vadersentiment", specifier = ">=3.3.2" },
-    { name = "watchdog", specifier = ">=4.0" },
+    { name = "watchdog", specifier = ">=6.0" },
     { name = "yfinance", specifier = ">=0.2.40" },
 ]
 provides-extras = ["dev"]

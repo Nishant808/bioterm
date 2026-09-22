@@ -8,7 +8,8 @@
 # real dependency line below (that forces a clean rebuild) or reboot from the
 # Streamlit Cloud console.
 sqlalchemy>=2.0
-watchdog>=4.0               # faster + more reliable file-watch on Streamlit Cloud
+watchdog>=6.0               # faster + more reliable file-watch on Streamlit Cloud (floor bumped
+                            # from 4.0 to force a clean Cloud rebuild - session 7)
 psycopg[binary]>=3.1        # Postgres driver for the cloud DATABASE_URL
 yfinance>=0.2.40
 pandas>=2.1

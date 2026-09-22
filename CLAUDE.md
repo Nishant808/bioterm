@@ -91,7 +91,10 @@ open-market insider buying.
 - Every new ingest source: bounded request count + a wall-clock budget (see `fda.py`,
   `insiders.py`); fail soft (warn, continue), never abort the whole refresh.
 - Works on SQLite (local) **and** Postgres (cloud) — same schema. Test both mentally;
-  `read_sql` wraps raw strings in `text()`.
+  `read_sql` wraps raw strings in `text()`. SQLite stores DateTime as text with
+  microseconds: in raw SQL pass time cuts as `"%Y-%m-%d %H:%M:%S"` strings with `>=`/`<=`,
+  and never test `ts = :datetime` — use a Core `select(...).where(col == dt)` so the
+  column type binds it (raw equality silently matched nothing on SQLite, session 7).
 - `uv run pytest -q` before committing. Tests use a tmp SQLite DB and stub the YAML seed.
   ("Failed to spawn: pytest" = the venv's script shebangs still point at an old repo
   path after a move → `uv sync --extra dev --reinstall`.)
