@@ -1,10 +1,66 @@
+# BioTerm theme - one dark, data-first design system, configured natively so it
+# reaches every Streamlit element (dataframes, inputs, tabs, metrics, charts)
+# and survives Streamlit upgrades. dashboard/_ui.py only adds what config can't
+# express (motion, list rows, header/footer chrome) and mirrors these tokens.
+#
+# Colour decisions were computed, not eyeballed:
+#   - primaryColor #3D84FA: white button text 3.57:1, accent-on-background 5.41:1
+#   - text tokens all clear WCAG AA on the background (muted #8A94A6 = 6.3:1)
+#   - chartCategoricalColors order validated for colour-vision deficiency on
+#     #0B0E14 (dataviz validate_palette.js): blue, orange, violet, aqua pass the
+#     adjacent-pair gate; the first slots are the chart series defaults.
+
 [theme]
 base = "dark"
-primaryColor = "#5b9dff"
-backgroundColor = "#0b0e14"
-secondaryBackgroundColor = "#141a24"
-textColor = "#e7ebf3"
-font = "sans serif"
+primaryColor = "#3D84FA"
+backgroundColor = "#0B0E14"
+secondaryBackgroundColor = "#121821"
+textColor = "#E6EAF2"
+linkColor = "#5B9DFF"
+linkUnderline = false
+borderColor = "#232C3A"
+showWidgetBorder = true
+showSidebarBorder = true
+codeTextColor = "#9DC2FF"
+codeBackgroundColor = "#121821"
+
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap"
+baseFontSize = 14
+baseFontWeight = 400
+codeFontSize = "0.86rem"
+headingFontSizes = ["26px", "20px", "16px", "14px", "13px", "12px"]
+headingFontWeights = [700, 600, 600, 600, 500, 500]
+metricValueFontSize = "1.7rem"
+metricValueFontWeight = 600
+
+baseRadius = "8px"
+buttonRadius = "8px"
+
+# semantic palette - drives st.badge, st.metric deltas, :green[] text, alerts
+greenColor = "#3FB96B"
+redColor = "#E5484D"
+orangeColor = "#E0763A"
+yellowColor = "#E0A33E"
+blueColor = "#5B9DFF"
+violetColor = "#9085E9"
+grayColor = "#8A94A6"
+
+chartCategoricalColors = ["#3987E5", "#D95926", "#9085E9", "#199E70",
+                          "#C98500", "#D55181", "#008300", "#E66767"]
+chartSequentialColors = ["#0D366B", "#104281", "#184F95", "#1C5CAB", "#256ABF",
+                         "#2A78D6", "#3987E5", "#5598E7", "#86B6EF", "#B7D3F6"]
+
+dataframeBorderColor = "#232C3A"
+dataframeHeaderBackgroundColor = "#121821"
+
+[theme.sidebar]
+backgroundColor = "#080A0F"
+secondaryBackgroundColor = "#121821"
+borderColor = "#1B2230"
+
+[client]
+toolbarMode = "minimal"
 
 [browser]
 gatherUsageStats = false

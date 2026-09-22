@@ -34,12 +34,9 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-PLOTLY_TEMPLATE = "plotly_dark"
-ACCENT = "#00b8d4"
-POS = "#26a69a"
-NEG = "#ef5350"
-
-st.set_page_config(page_title="BioTerm", page_icon="🧬", layout="wide")
+# Page config (title, icon, layout) is set by the router in Home.py on every
+# run - a call here would only ever run once per process, since this module is
+# cached in sys.modules after the first import.
 
 
 # --------------------------------------------------------------------- caching

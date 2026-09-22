@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="BioTerm">
+  <defs>
+    <linearGradient id="bt-g" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4C8DFF"/>
+      <stop offset="1" stop-color="#6A5CF6"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="url(#bt-g)"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 6C19.5 7.5 21 9.3 21 11S19.5 14.5 16 16 11 19.3 11 21s1.5 3.5 5 5"/>
+    <path d="M16 6C12.5 7.5 11 9.3 11 11s1.5 3.5 5 5 5 3.3 5 5-1.5 3.5-5 5" stroke-opacity=".5"/>
+    <path d="M13.3 11h5.4M13.3 21h5.4" stroke-width="1.6" stroke-opacity=".7"/>
+  </g>
+</svg>
