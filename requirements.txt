@@ -1,7 +1,7 @@
 # Runtime deps for the Streamlit Community Cloud dashboard.
 # (The dashboard adds ./src to sys.path, so the `bioterm` package itself is not
 #  installed here — only its third-party dependencies. Keep in sync with pyproject.toml.)
-# rebuild-marker: 2026-09-10 portfolio.4
+# rebuild-marker: 2026-09-22 ui-v2
 # NB: a comment-only edit here does NOT reliably make Streamlit Cloud re-run the
 # install — it keeps imported modules (bioterm.*, _shared, _ui) in sys.modules on a
 # fast reboot. When a page needs a *new* symbol from a long-lived module, change a
@@ -22,7 +22,8 @@ apscheduler>=3.10
 streamlit>=1.63        # bumped from 1.36 - also forces Streamlit Cloud's fast-reboot
                        # cache of already-imported modules (_ui, _shared, bioterm.*)
                        # to actually clear; see CLAUDE.md's deploy gotcha
-plotly>=5.22
+plotly>=6.0            # bumped from 5.22 (session 7 UI release) - a real
+                       # dependency change forces the clean Cloud rebuild
 pyyaml>=6.0
 typer>=0.12
 rich>=13.0
