@@ -17,8 +17,9 @@ import os
 from datetime import datetime, timezone
 
 import pandas as pd
+from sqlalchemy import select
 
-from .db import alerts_fired, bulk_upsert, read_sql
+from .db import alerts_fired, bulk_upsert, read_sql, score_snapshots
 from .httpx_util import session
 from .store import get_meta, get_watchlist
 from .util import strip_markup
@@ -52,17 +53,26 @@ def evaluate(rules: dict | None = None) -> list[dict]:
     scores = read_sql("SELECT ticker, focus_score, rank FROM scores "
                       "WHERE asof = (SELECT MAX(asof) FROM scores)")
     cats = read_sql("SELECT ticker, type, date, months_away, title FROM catalysts")
+    # Only the lookback window is ever used, so don't pull the whole news table (thousands
+    # of rows; this runs on every Alerts page view). A day of slack in SQL, the exact cut
+    # below - so the result can't depend on how a backend compares the timestamp.
+    cut = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=int(rules["news_lookback_days"]))
     news = read_sql(
-        "SELECT ticker, title, published, event_tags, event_score FROM news")
+        "SELECT ticker, title, published, event_tags, event_score FROM news "
+        "WHERE published >= :c",
+        {"c": (cut - pd.Timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")})
 
     out: list[dict] = []
 
     # --- score jumps vs the last distinct snapshot run ---
-    runs = read_sql("SELECT DISTINCT ts FROM score_snapshots ORDER BY ts DESC")
+    runs = read_sql("SELECT DISTINCT ts FROM score_snapshots ORDER BY ts DESC LIMIT 2")
     if len(runs) >= 2:
-        prev_ts = pd.to_datetime(runs.iloc[1]["ts"])
-        prev = read_sql("SELECT ticker, focus_score FROM score_snapshots WHERE ts = :t",
-                        {"t": prev_ts.to_pydatetime()}).set_index("ticker")
+        prev_ts = pd.to_datetime(runs.iloc[1]["ts"]).to_pydatetime()
+        # A Core select, not raw SQL: the column type binds the datetime the way it was
+        # stored. Raw, SQLite compares text - "... 11:00:00" never equals the stored
+        # "... 11:00:00.000000", so score moves silently never fired on a local DB.
+        prev = read_sql(select(score_snapshots.c.ticker, score_snapshots.c.focus_score)
+                        .where(score_snapshots.c.ts == prev_ts)).set_index("ticker")
         for _, r in scores.iterrows():
             if wl_only and r["ticker"] not in wl:
                 continue
@@ -87,7 +97,6 @@ def evaluate(rules: dict | None = None) -> list[dict]:
     # --- high-signal headlines ---
     if not news.empty:
         news["published"] = pd.to_datetime(news["published"], utc=True, errors="coerce")
-        cut = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=int(rules["news_lookback_days"]))
         want = set(rules["event_tags"])
         for _, n in news[news["published"] >= cut].iterrows():
             hit = {t for t in str(n["event_tags"] or "").split(",") if t} & want

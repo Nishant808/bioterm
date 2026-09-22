@@ -13,6 +13,14 @@ page_header("Alerts",
             "Rules run on every fast refresh · new hits are logged, and sent to Telegram "
             "if configured")
 
+
+@st.cache_data(ttl=120, show_spinner=False)
+def firing_now(rules: dict) -> list[dict]:
+    """The rules against the latest data - keyed on the rules, so moving a slider
+    re-evaluates while a plain revisit is instant (data only changes every refresh)."""
+    return alert_engine.evaluate(rules)
+
+
 rules = alert_engine.get_rules()
 
 with st.expander("Alert rules", icon=":material/tune:", expanded=False):
@@ -41,7 +49,7 @@ tab_now, tab_hist = st.tabs([":material/notifications_active: Firing now",
                              ":material/history: History"])
 
 with tab_now:
-    firing = alert_engine.evaluate(rules)
+    firing = firing_now(rules)
     if not firing:
         empty_state("Nothing trips the current rules right now",
                     "Loosen a threshold above, or check back after the next refresh.",
