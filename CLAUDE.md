@@ -22,10 +22,13 @@ src/bioterm/
   pipeline.py   run_job() wrapper (logs to ingest_runs) + run_full_refresh()
   scheduler.py  APScheduler (local "always on")
   cli.py        typer:  init-db · universe · ingest · score · alerts · status · serve · scheduler
-dashboard/      Streamlit — _ui.py (theme + page_setup + components),
-                _shared.py (cached DB reads + sentiment_df), Home.py + pages/1..8
-                (8 = Paper-Trading Desk — buy/sell blotter + positions + net-worth curve;
-                 fully separate from the research pages, simulated fills, long-only)
+dashboard/      Streamlit — Home.py (router: st.navigation top bar, logo, CSS, footer)
+                app_pages/  overview focus stock catalysts news watchlist compare alerts portfolio
+                _ui.py (design system: tokens + components + chart helpers)
+                _shared.py (cached DB reads + sentiment_df) · assets/ (logo + mark SVG)
+                (portfolio = Paper-Trading Desk — buy/sell blotter + positions + net-worth
+                 curve; fully separate from the research pages, simulated fills, long-only)
+.streamlit/config.toml   native theme (colours, Inter/JetBrains Mono, radius, chart palette)
 .github/workflows/  ingest-fast.yml (0 11-23/2)  ·  ingest-full.yml (0 9)  — private-repo cadence
 deploy/         Dockerfile, compose, launchd, setup-github.sh, README.md
 ```
@@ -36,21 +39,38 @@ private repo `Nishant808/bioterm`.
 
 ## Dashboard UI
 
-- Every page starts with `from _ui import page_setup, …; page_setup(title, subtitle)`.
-- `_ui.py` owns the theme CSS (injected every run — Streamlit drops prior-page markup),
-  the palette (`ACCENT/POS/NEG/WARN`, `PHASE_COLORS`, `SMA_COLORS`), `plotly_layout()`,
-  and components: `eyebrow()`, `stat_strip()`, `signal_dot()`, `sentiment_word()`.
+- `Home.py` is the **router**, not a page: `st.navigation(position="top")` over
+  `app_pages/*.py`, then injects the CSS, runs the page, renders the footer, and turns a
+  `SQLAlchemyError` into an empty state + retry. Page URLs (`/Stock_Detail?ticker=X`,
+  `/Portfolio?pf=…`) are kept from the old multipage layout — deep links still work.
+- A page calls `page_header(title, subtitle)` and composes `card()`, `kpi_row(n, name)`
+  (a responsive grid of `st.metric(border=True)`), `label()`, `empty_state()`, the list
+  renderers `headline_rows()` / `catalyst_rows()` / `alert_rows()`, `kv_list()`, `badge()`.
+- **Theme lives in `.streamlit/config.toml`** (native theming reaches every widget);
+  `_ui.py` mirrors those tokens (`BG/SURFACE/BORDER/TEXT/MUTED/PRIMARY/ACCENT/POS/NEG/WARN`)
+  for Plotly and custom HTML — change a colour in both. `_ui._CSS` only adds what config
+  can't express (header, list rows, badges, KPI grid, motion; honours reduced-motion).
+- Charts: `fig.update_layout(**plotly_layout(...))` then `chart(fig, key=…)`. Never set a
+  plotly `template` (it would override the config's `chartCategoricalColors`), never a dual
+  y-axis (stack two panels instead). Series colours follow the entity (`SERIES`,
+  catalyst `FAMILIES`, `PHASE_COLORS`, `SMA_COLORS`); `POS/NEG/WARN` mean state only.
+- Feed text is untrusted: `plain()` strips markup (mirrors `bioterm.util.strip_markup`),
+  `esc()` before any `unsafe_allow_html`/`st.html`, `safe_url()` for hrefs, `md_safe()` for
+  `$` in markdown (otherwise it renders as LaTeX), `usd()` for money (`−$826`, not `$-826`).
 - **Deploy gotcha:** Streamlit Cloud does a *fast* reboot on a `.py`-only push — it
   pulls the new source but keeps every imported module (`bioterm.*`, `_shared`, `_ui`)
-  in `sys.modules`. A page that imports a **brand-new symbol** from a long-lived module
-  then ImportErrors on the live app (traceback points at the new source line inside an
-  old frame). Page files under `pages/` always re-execute, so keep page-critical logic
-  in the page itself or in a **brand-new module**. To actually force a full restart you
-  must **change a real dependency line in `requirements.txt`** (the `rebuild-marker`
+  in `sys.modules`. The router's `_fresh()` now reloads `_shared` / `_ui` when their file
+  changed, and `app_pages/` always re-execute — but `bioterm.*` is still stale, so a page
+  (or `_ui`) importing a **brand-new symbol** from `bioterm.*` ImportErrors on the live app
+  (traceback points at the new source line inside an old frame). To force a full restart
+  you must **change a real dependency line in `requirements.txt`** (the `rebuild-marker`
   *comment* alone does NOT trigger a reinstall — learned the hard way, session 5) or
   reboot from the Streamlit Cloud console.
+- `tests/test_dashboard.py` renders every page with Streamlit's `AppTest` against an
+  empty and a seeded DB, plus deep links and a few interactions — keep it green.
 - News sentiment: `_shared.sentiment_df(days)` / `sentiment_series(ticker, days)`.
-- No repeated disclaimer on pages — it lives once in the sidebar footer.
+- No repeated disclaimer on pages — it lives once in the page footer (`_ui.footer()`,
+  rendered by the router).
 
 ## Focus Score
 
@@ -73,6 +93,8 @@ open-market insider buying.
 - Works on SQLite (local) **and** Postgres (cloud) — same schema. Test both mentally;
   `read_sql` wraps raw strings in `text()`.
 - `uv run pytest -q` before committing. Tests use a tmp SQLite DB and stub the YAML seed.
+  ("Failed to spawn: pytest" = the venv's script shebangs still point at an old repo
+  path after a move → `uv sync --extra dev --reinstall`.)
 - Commit messages end with the Co-Authored-By trailer. Don't push / create PRs unless asked.
 
 ## Run locally

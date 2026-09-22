@@ -117,7 +117,8 @@ runs the rest. Then you do C.
 ### Local dev
 
 Local Streamlit server was **stopped** (per your request). Re-run for dev:
-`cd ~/Desktop/cld && uv run bioterm serve`. Local DB is `data/bioterm.db` (SQLite,
+`cd ~/Desktop/PROJECTS/Bioterm && uv run bioterm serve` (the repo moved there from
+`~/Desktop/cld` - session 7). Local DB is `data/bioterm.db` (SQLite,
 gitignored) with the last 55-ticker refresh in it.
 
 ---
@@ -500,3 +501,60 @@ the bonus (which was already going to need one - see below).
 dependency, an API key, or a live network call beyond the going-concern body
 fetch (which reuses existing ingest budget/backoff conventions). Not pushed -
 CLAUDE.md says don't push without being asked.
+
+Follow-ups (same session, all pushed): session 6 went live (`feafe2f`..`46dbb99`), then a
+UI polish pass (`d465f66` - faster font loading, hover/motion) and `a2ac141`
+(`streamlit>=1.63`, which also forced the clean Cloud rebuild).
+
+---
+
+## 2026-09-22 — session 7: dashboard v2 (design system + router)
+
+User asked to take the UI "to the next level" - professional design principles,
+reliability, elegance - and push. Every feature and widget key was preserved; the
+work is structure, presentation and correctness of what's shown.
+
+- **Router.** `dashboard/Home.py` is now an `st.navigation(position="top")` router over
+  `dashboard/app_pages/` (overview, focus, stock, catalysts, news, watchlist, compare,
+  alerts, portfolio). URL paths kept from the old `pages/` layout, so
+  `/Stock_Detail?ticker=X` and `/Portfolio?pf=…` deep links still work. The router
+  injects the CSS once per run, renders the footer, and turns a DB outage
+  (`SQLAlchemyError`) into an empty state with a retry instead of a traceback.
+  `_fresh()` reloads `_shared`/`_ui` when their file changes, which removes the
+  fast-reboot ImportError for those two modules (`bioterm.*` is still stale - see
+  CLAUDE.md).
+- **Theme.** Colours, fonts (Inter + JetBrains Mono), radius, borders, dataframe
+  chrome and the chart palette moved into native theming in `.streamlit/config.toml`,
+  so they reach every widget. `_ui.py` mirrors the tokens for Plotly/HTML and keeps
+  only what config can't do. Contrast checked (body 16:1, muted 6.3:1). New logo +
+  favicon in `dashboard/assets/`.
+- **Components.** `page_header` (title + data-freshness chip), `card`, `kpi_row`
+  (a CSS grid of bordered `st.metric`s, so cards stay even at tablet width), `label`,
+  `empty_state`, badges, and list renderers for headlines/catalysts/alerts.
+- **Charts** (dataviz rules, palettes run through the validator for dark mode): no
+  plotly `template`, so the config palette applies; catalyst families colour-coded
+  consistently (regulatory orange, clinical blue, corporate gray); trial phases on a
+  one-hue ordinal ramp; the Stock Detail news chart split into two stacked panels
+  instead of a dual axis; Compare keeps each ticker's colour stable when the
+  selection changes, and labels line ends directly; future catalyst markers are
+  capped at +60 days so they no longer squash the price history.
+- **Correctness of what's displayed:**
+  - Raw `<a href=…>` in FierceBiotech RSS titles is now stripped at ingest
+    (`util.strip_markup`), in alert details (before truncating), and in the UI.
+    The pattern only matches tag-shaped text, so `p<0.001` and `<LLOQ` survive.
+  - Telegram messages are HTML-escaped. "R&D" used to be a hard parse error.
+  - ALL-CAPS issuer names are title-cased; money renders as `−$826`, not `$-826`.
+    A `$` in a markdown caption no longer turns the text into LaTeX.
+  - The Overview "headlines vs prior period" KPI now uses a 30-day aggregate
+    query. `news_df(3000)` only reached back a week, so the comparison was wrong.
+  - "(news)" prefixes and raw catalyst keys are replaced with readable labels,
+    and `-0.000` contributions are gone.
+- **Tests:** `tests/test_dashboard.py` (AppTest renders all 9 pages on an empty and
+  a seeded DB, plus deep links, the focus filter and the portfolio price-follows-
+  ticker case) and `tests/test_markup.py`. **112 passing.**
+- `plotly>=5.22` → `>=6.0` in requirements.txt/pyproject (resolved version
+  unchanged, 7.0.0). It's a real dependency line, so Cloud does a clean rebuild
+  for the new theme config and the module layout.
+- Local env: the venv's console scripts still pointed at `~/Desktop/cld` after the
+  repo move (`uv run pytest` → "Failed to spawn") → fixed with
+  `uv sync --extra dev --reinstall`.

@@ -122,7 +122,7 @@ src/bioterm/
   config.py db.py universe.py httpx_util.py pipeline.py scheduler.py cli.py
   ingest/    prices fundamentals edgar clinical fda news
   process/   technicals sentiment catalysts score
-dashboard/   Home.py + pages/
+dashboard/   Home.py (router) + app_pages/ + _ui.py (design system) + assets/
 deploy/      Dockerfile docker-compose.yml launchd/ github/
 tests/
 ```
