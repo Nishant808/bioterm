@@ -20,7 +20,7 @@ from ..db import bulk_upsert, news, read_sql
 from ..httpx_util import get_bytes
 from ..process.sentiment import score_text
 from ..universe import universe_tickers
-from ..util import as_text
+from ..util import as_text, strip_markup
 
 log = logging.getLogger("bioterm.ingest.news")
 
@@ -98,9 +98,7 @@ def _published(entry) -> datetime | None:
 
 
 def _clean_summary(entry) -> str:
-    raw = entry.get("summary", "") or ""
-    text = re.sub(r"<[^>]+>", " ", raw)
-    return re.sub(r"\s+", " ", text).strip()[:1000]
+    return strip_markup(entry.get("summary", ""))[:1000]
 
 
 def _parse_feed(url: str) -> list:
@@ -131,7 +129,7 @@ def run(tickers: list[str] | None = None, google: bool | None = None) -> dict:
         link = entry.get("link", "")
         if not link:
             return
-        title = entry.get("title", "") or ""
+        title = strip_markup(entry.get("title", ""))
         summary = _clean_summary(entry)
         pub = _published(entry)
         if pub and pub < cutoff:

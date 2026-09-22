@@ -11,6 +11,7 @@ Delivery is opt-in and credential-gated:
 from __future__ import annotations
 
 import hashlib
+import html
 import logging
 import os
 from datetime import datetime, timezone
@@ -20,6 +21,7 @@ import pandas as pd
 from .db import alerts_fired, bulk_upsert, read_sql
 from .httpx_util import session
 from .store import get_meta, get_watchlist
+from .util import strip_markup
 
 log = logging.getLogger("bioterm.alerts")
 
@@ -79,7 +81,7 @@ def evaluate(rules: dict | None = None) -> list[dict]:
             if wl_only and c["ticker"] not in wl:
                 continue
             out.append({"kind": "catalyst soon", "ticker": c["ticker"],
-                        "detail": f"{c['type']} · {c['date']} ({float(c['months_away']):.1f} mo) — {str(c['title'])[:90]}",
+                        "detail": f"{c['type']} · {c['date']} ({float(c['months_away']):.1f} mo) — {strip_markup(c['title'])[:90]}",
                         "weight": 1.0 / (1 + max(0.0, float(c["months_away"])))})
 
     # --- high-signal headlines ---
@@ -93,8 +95,10 @@ def evaluate(rules: dict | None = None) -> list[dict]:
                 continue
             if wl_only and str(n["ticker"] or "").upper() not in wl:
                 continue
+            # strip feed markup *before* truncating - cutting a title mid-tag
+            # leaves an unclosed <a href=... that Telegram's HTML mode rejects
             out.append({"kind": "headline", "ticker": n["ticker"] or "?",
-                        "detail": f"{', '.join(sorted(hit))} — {str(n['title'])[:110]}",
+                        "detail": f"{', '.join(sorted(hit))} — {strip_markup(n['title'])[:110]}",
                         "weight": abs(float(n["event_score"] or 0))})
 
     out.sort(key=lambda a: a["weight"], reverse=True)
@@ -148,7 +152,9 @@ def run(deliver: bool = True, max_deliver: int = 12) -> dict:
         lines = [f"<b>BioTerm — {len(fresh)} new alert(s)</b>"]
         for a in top:
             icon = {"score move": "📈", "catalyst soon": "🗓", "headline": "📰"}.get(a["kind"], "•")
-            lines.append(f"{icon} <b>{a['ticker']}</b> — {a['detail']}")
+            # parse_mode=HTML: a raw "&" or "<" in a title ("R&D") is a hard error
+            lines.append(f"{icon} <b>{html.escape(str(a['ticker']))}</b> — "
+                         f"{html.escape(str(a['detail']))}")
         if len(fresh) > len(top):
             lines.append(f"…and {len(fresh) - len(top)} more")
         if _telegram("\n".join(lines)):
