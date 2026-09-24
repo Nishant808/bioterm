@@ -1,0 +1,128 @@
+{
+  "fps": 30,
+  "duration": 30,
+  "scenes": {
+    "market": [
+      0,
+      4
+    ],
+    "question": [
+      4,
+      7
+    ],
+    "network": [
+      7,
+      11
+    ],
+    "biology": [
+      11,
+      15
+    ],
+    "reveal": [
+      15,
+      19.6
+    ],
+    "flow": [
+      19.6,
+      24
+    ],
+    "message": [
+      24,
+      27
+    ],
+    "endcard": [
+      27,
+      30
+    ]
+  },
+  "beat": {
+    "terminalIn": 0.15,
+    "drawStart": 0.55,
+    "accel": 2.0,
+    "spikeStart": 2.72,
+    "spikeEnd": 3.12,
+    "rescaleEnd": 3.45,
+    "oneDay": 3.05,
+    "oneSignal": 3.5,
+    "zoomStart": 2.9,
+    "chromeOut": [
+      4.0,
+      4.55
+    ],
+    "question": 4.45,
+    "questionOut": 6.55,
+    "diveStart": 4.7,
+    "diveEnd": 6.9,
+    "streamStart": 4.95,
+    "streamToEdges": [
+      6.45,
+      7.35
+    ],
+    "centerNode": 6.95,
+    "primaryIn": 7.05,
+    "secondaryIn": 7.7,
+    "crossEdges": 8.6,
+    "decode": 10.8,
+    "converge": [
+      13.85,
+      14.9
+    ],
+    "connect": 13.25,
+    "flash": 14.95,
+    "windowW": [
+      15.0,
+      15.35
+    ],
+    "windowH": [
+      15.25,
+      15.75
+    ],
+    "appIn": 15.55,
+    "steps": [
+      19.6,
+      20.4,
+      21.5,
+      22.35,
+      23.1,
+      24.0
+    ],
+    "uiRecede": [
+      23.9,
+      24.5
+    ],
+    "signal": 24.25,
+    "biology2": 25.05,
+    "brand": 25.95,
+    "lockup": 27.0,
+    "tagline": 27.75,
+    "url": 28.2,
+    "hold": 28.3
+  },
+  "chapters": [
+    {
+      "key": "MARKET",
+      "from": 0.4,
+      "to": 7.0
+    },
+    {
+      "key": "COMPANY",
+      "from": 7.0,
+      "to": 10.8
+    },
+    {
+      "key": "BIOLOGY",
+      "from": 10.8,
+      "to": 12.9
+    },
+    {
+      "key": "SCIENCE",
+      "from": 12.9,
+      "to": 15.0
+    },
+    {
+      "key": "INTELLIGENCE",
+      "from": 15.0,
+      "to": 23.9
+    }
+  ]
+}

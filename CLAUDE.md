@@ -31,6 +31,8 @@ dashboard/      Streamlit — Home.py (router: st.navigation top bar, logo, CSS,
 .streamlit/config.toml   native theme (colours, Inter/JetBrains Mono, radius, chart palette)
 .github/workflows/  ingest-fast.yml (0 11-23/2)  ·  ingest-full.yml (0 9)  — private-repo cadence
 deploy/         Dockerfile, compose, launchd, setup-github.sh, README.md
+video/          30s launch film — Remotion 4 (React/SVG) + procedural audio; own package.json,
+                see video/README.md (timeline.json drives picture + sound; output/ git-ignored)
 ```
 
 **Deployed:** dashboard = https://bioterm.streamlit.app (Streamlit Cloud, auto-redeploys

@@ -1,0 +1,27 @@
+{
+  "name": "bioterm-launch-video",
+  "private": true,
+  "version": "1.0.0",
+  "description": "BioTerm Intelligence Terminal - 30s launch teaser, rendered programmatically with Remotion",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "audio": "python3 audio/generate.py",
+    "render:master": "node scripts/render.mjs master",
+    "render:vertical": "node scripts/render.mjs vertical",
+    "stills": "node scripts/render.mjs stills"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@remotion/bundler": "^4.0.528",
+    "@remotion/cli": "^4.0.528",
+    "@remotion/renderer": "^4.0.528",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "remotion": "^4.0.528"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "typescript": "^7.0.2"
+  }
+}

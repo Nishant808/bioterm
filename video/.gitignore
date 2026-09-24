@@ -1,0 +1,4 @@
+node_modules/
+output/
+public/audio/soundtrack.wav
+!src/data/
