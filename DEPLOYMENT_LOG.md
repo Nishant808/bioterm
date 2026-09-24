@@ -707,7 +707,15 @@ names — and exposed real-data bugs, all fixed:
   - every news ingest re-upserts articles still in the feeds with VADER, overwriting
     FinBERT between daily runs → `finbert.reapply()` after each news upsert.
   Run 2 moved the probe onto a Postgres 16 service (Neon's engine enforces VARCHAR
-  lengths SQLite ignores; strings are now truncated to column sizes).
+  lengths SQLite ignores; strings are now truncated to column sizes). **Passed: every
+  job ok on Postgres and all 13 pages render against the live-data DB.** Boxer no
+  longer shows as selling (specialist-exit flags 27 → 17), aliases are clean
+  ("Journavx", "VX-147", "Zimislecel", "intismeran autogene"…), molecule catalysts
+  are industry trials only, 382 CUSIPs mapped. Remaining gap: 58 OpenFIGI misses
+  included large US listings (Nuvalent, Apellis, Centessa, NewAmsterdam, Immatics) →
+  a second name pass against SEC's `company_tickers.json` titles (exact normalised
+  name, primary ticker first; earlier "none" results retried) and `company_key` now
+  folds initialisms ("N.V." → NV, "A/S" → AS, "HLDGS").
 
 **What the backtest said (70 names, 5y, run 1):** the Focus momentum component and
 the net technical signal have ~zero IC at 1/3/6 months; several price detectors have
@@ -722,7 +730,7 @@ be scored live — the track record accrues from today.
 molecules ~3 min after the first backfill) → ~1,750 Actions min/month. The probe only
 runs on pushes to `main-vcyb9o` touching `src/`/`config/` (~10 min each).
 
-**Tests:** 165 passing (new: institutions, short volume, options, FinBERT, molecules,
+**Tests:** 166 passing (new: institutions, short volume, options, FinBERT, molecules,
 signals, backtest, migration, price plan, signal alerts, dashboard pages).
 
 **To deploy:** merge `main-vcyb9o` into `main`. Streamlit Cloud rebuilds (pandas floor),

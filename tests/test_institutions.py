@@ -149,6 +149,9 @@ def test_run_fetches_new_periods_once_and_maps_tickers(monkeypatch):
     monkeypatch.setattr(inst, "get_bytes",
                         lambda url, **kw: (FIX / "13f_infotable_sample.xml").read_bytes())
     monkeypatch.setattr(inst, "openfigi_lookup", lambda cusips: {c: None for c in cusips})
+    from bioterm.ingest import edgar
+
+    monkeypatch.setattr(edgar, "sec_titles", lambda: [])
     from bioterm.config import load_settings as real
 
     def one_fund():
@@ -166,3 +169,34 @@ def test_run_fetches_new_periods_once_and_maps_tickers(monkeypatch):
     n_calls = len(calls)
     assert inst.run()["periods_fetched"] == 0          # period already stored
     assert len(calls) == n_calls + 1                    # only the submissions check
+
+
+def test_sec_registrant_names_map_holdings_outside_the_universe(monkeypatch):
+    from bioterm.db import cusip_map
+    from bioterm.ingest import edgar
+
+    init_db()
+    _holdings([("1", date(2026, 6, 30), "45337C102", None, 100),
+               ("1", date(2026, 6, 30), "457669307", None, 50),
+               ("1", date(2026, 6, 30), "N62509109", None, 10)])
+    # the fixture helper stores issuer = cusip; give them real 13F-style names
+    from bioterm.db import get_engine, inst_holdings
+    with get_engine().begin() as conn:
+        for c, n in (("45337C102", "INCYTE CORP"), ("457669307", "INSMED INC"),
+                     ("N62509109", "NEWAMSTERDAM PHARMA CO NV")):
+            conn.execute(inst_holdings.update().where(inst_holdings.c.cusip == c)
+                         .values(issuer=n))
+    # an earlier run found nothing for NewAmsterdam - it is retried by name
+    bulk_upsert(cusip_map, [{"cusip": "N62509109", "ticker": None, "method": "none"}])
+    monkeypatch.setattr(edgar, "sec_titles", lambda: [
+        ("INCY", "Incyte Corp"), ("INSM", "Insmed Inc"), ("NAMS", "NewAmsterdam Pharma Co N.V."),
+        ("NAMSW", "NewAmsterdam Pharma Co N.V.")])
+    figi = []
+    monkeypatch.setattr(inst, "openfigi_lookup", lambda cusips: figi.extend(cusips) or {})
+    inst.map_cusips(max_openfigi=10)
+    m = read_sql("SELECT cusip, ticker, method FROM cusip_map").set_index("cusip")
+    assert m.loc["45337C102", "ticker"] == "INCY" and m.loc["45337C102", "method"] == "sec"
+    assert m.loc["N62509109", "ticker"] == "NAMS"       # primary listing, not the warrant
+    assert figi == []                                   # nothing left for OpenFIGI
+    h = read_sql("SELECT cusip, ticker FROM inst_holdings").set_index("cusip")["ticker"]
+    assert h["457669307"] == "INSM"

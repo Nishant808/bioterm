@@ -214,16 +214,32 @@ def map_cusips(max_openfigi: int = 60) -> int:
     exact, core = name_index(secs) if not secs.empty else ({}, {})
     now = datetime.now(timezone.utc)
 
+    # SEC's own registrant list (every US-listed issuer, ADRs included) catches
+    # holdings outside the universe by exact normalised name - no per-CUSIP calls.
+    # Earlier "none" results are retried here: the list grows as companies list.
+    sec_exact: dict[str, str] = {}
+    try:
+        from .edgar import sec_titles
+
+        for tk, title in sec_titles():
+            sec_exact.setdefault(company_key(title), tk)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("13F: SEC ticker list unavailable (%s) - name pass skipped", exc)
+    retry = {c for c, t in known_map.items() if t is None or (isinstance(t, float) and pd.isna(t))}
+
     new_rows: list[dict] = []
     figi_needed: list[tuple[str, str]] = []
     for _, r in hold.iterrows():
-        if r["cusip"] in known_map:
+        if r["cusip"] in known_map and r["cusip"] not in retry:
             continue
         tk = match_issuer(r["issuer"], exact, core)
+        method = "name"
+        if not tk:
+            tk, method = sec_exact.get(company_key(r["issuer"])), "sec"
         if tk:
             new_rows.append({"cusip": r["cusip"], "ticker": tk, "issuer": r["issuer"],
-                             "method": "name", "updated_at": now})
-        else:
+                             "method": method, "updated_at": now})
+        elif r["cusip"] not in retry:
             figi_needed.append((r["cusip"], r["issuer"]))
     if figi_needed and max_openfigi > 0:
         got = openfigi_lookup([c for c, _ in figi_needed[:max_openfigi]])

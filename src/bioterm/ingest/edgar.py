@@ -32,8 +32,8 @@ _MIN_INTERVAL = 0.15  # ~6-7 req/s, safely under EDGAR's 10/s
 
 
 @lru_cache(maxsize=1)
-def ticker_cik_map() -> dict[str, str]:
-    """{TICKER: 'zero-padded-10-digit-CIK'} from SEC's official mapping file."""
+def _company_tickers() -> list[dict]:
+    """SEC's official ticker file (rows of cik_str / ticker / title), cached on disk."""
     cache = CACHE_DIR / "company_tickers.json"
     try:
         data = get_json(TICKERS_URL, min_interval=_MIN_INTERVAL)
@@ -43,10 +43,26 @@ def ticker_cik_map() -> dict[str, str]:
             raise
         log.warning("using cached ticker map (%s)", exc)
         data = json.loads(cache.read_text())
+    return list(data.values() if isinstance(data, dict) else data)
 
+
+def sec_titles() -> list[tuple[str, str]]:
+    """[(TICKER, company title)] in SEC's order (largest first, so a company's
+    primary ticker precedes its other share classes)."""
+    out = []
+    for row in _company_tickers():
+        try:
+            out.append((str(row["ticker"]).upper(), str(row["title"])))
+        except (KeyError, TypeError):
+            continue
+    return out
+
+
+@lru_cache(maxsize=1)
+def ticker_cik_map() -> dict[str, str]:
+    """{TICKER: 'zero-padded-10-digit-CIK'} from SEC's official mapping file."""
     out: dict[str, str] = {}
-    values = data.values() if isinstance(data, dict) else data
-    for row in values:
+    for row in _company_tickers():
         try:
             out[str(row["ticker"]).upper()] = f"{int(row['cik_str']):010d}"
         except (KeyError, TypeError, ValueError):

@@ -42,7 +42,7 @@ _CORP_TAIL = {
     "INC", "INCORPORATED", "CORP", "CORPORATION", "CO", "COMPANY", "LTD", "LIMITED",
     "PLC", "SA", "NV", "SE", "AG", "AB", "ASA", "OYJ", "LLC", "LP", "HOLDINGS",
     "HOLDING", "GROUP", "SPONSORED", "ADR", "ADS", "ORD", "SHS", "COM", "CL", "CLASS",
-    "A", "B", "NEW", "DEL", "THE",
+    "A", "B", "NEW", "DEL", "THE", "AS", "HLDGS", "HLDG", "BV", "SPA", "KK",
 }
 # Industry words: dropped only for the looser "core" key
 _INDUSTRY = {
@@ -58,6 +58,9 @@ def company_key(name: Any) -> str:
     and trailing corporate-form words removed ("Alkermes plc" -> "ALKERMES")."""
     s = as_text(name).upper().replace("&", " AND ")
     s = re.sub(r"\(.*?\)", " ", s)
+    # dotted / slashed initialisms are one token: "N.V." -> NV, "A/S" -> AS, "S.p.A." -> SPA
+    s = re.sub(r"\b([A-Z])[./](?=[A-Z]\b)", r"\1", s)
+    s = re.sub(r"\b(S)\.P\.(A)\b", r"\1P\2", s)
     toks = [t for t in re.sub(r"[^A-Z0-9 ]", " ", s).split() if t]
     while toks and toks[0] == "THE":
         toks.pop(0)
