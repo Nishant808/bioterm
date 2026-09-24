@@ -48,4 +48,5 @@ def test_noop_without_the_nlp_extra(monkeypatch):
 def test_clean_title_and_tone():
     assert finbert.clean_title("Drug X approved - FiercePharma") == "Drug X approved"
     assert finbert.clean_title("Phase 3 - topline due in Q4") == "Phase 3 - topline due in Q4"
+    assert finbert.clean_title("Twist jumps on AI deal - timothysykes.com") == "Twist jumps on AI deal"
     assert finbert.to_tone({"positive": 0.7, "negative": 0.2, "neutral": 0.1}) == (0.5, "positive", 0.7)

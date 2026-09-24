@@ -109,6 +109,26 @@ def test_fund_changes_and_consensus():
     assert summ.loc["AAAA", "holders"] == 2
 
 
+def test_stale_funds_and_stub_filings_are_not_read_as_exits():
+    old0, old1 = date(2024, 9, 30), date(2024, 12, 31)
+    q1, q2 = date(2026, 3, 31), date(2026, 6, 30)
+    book = [(f"C{i:02d}", f"T{i:02d}") for i in range(12)]
+    _holdings(
+        # fund 1 stopped filing in 2024 (its last "13F" lists one line)
+        [("1", old0, c, t, 100) for c, t in book] + [("1", old1, "ZZZ", None, 1)]
+        # fund 2 files a stub quarter between two full ones
+        + [("2", q1, c, t, 100) for c, t in book] + [("2", q2, "C00", "T00", 100)]
+        + [("2", date(2025, 12, 31), c, t, 90) for c, t in book]
+        # fund 3 is current
+        + [("3", q1, "C00", "T00", 10), ("3", q2, "C00", "T00", 20)])
+    ch = smart_money.fund_changes()
+    assert "1" not in set(ch["cik"])                       # stale fund dropped entirely
+    f2 = ch[ch["cik"] == "2"]
+    assert set(f2["period"].dt.date) == {q1}              # stub quarter skipped
+    assert not (f2["status"] == "exited").any()
+    assert ch[ch["cik"] == "3"]["status"].tolist() == ["added"]
+
+
 def test_run_fetches_new_periods_once_and_maps_tickers(monkeypatch):
     init_db()
     bulk_upsert(securities, [{"ticker": "ACAD", "name": "ACADIA PHARMACEUTICALS INC"}])

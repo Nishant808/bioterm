@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from _shared import prev_scores_df, scores_df, sentiment_df
+from _shared import prev_scores_df, scores_df, sentiment_df, signal_board
 from _ui import (ACCENT, CATALYST_TYPES, FAMILIES, NEG, POS, TEXT_2, card, catalyst_family,
                  catalyst_label, catalyst_title, chart, display_name, empty_state, kpi_row,
                  kv_list, page_header, plotly_layout, tone_of)
@@ -62,8 +62,10 @@ df["Δ"] = [int(prev.loc[t, "rank"]) - int(r) if t in prev.index else 0
            for t, r in zip(df["ticker"], df["rank"])]
 df["news"] = df["ticker"].map(lambda t: sent["signal"].get(t) if t in sent.index else None)
 df["company"] = df["name"].map(display_name)
+_calls = signal_board().set_index("ticker")["label"].to_dict()
+df["call"] = df["ticker"].map(lambda t: [str(_calls[t]).title()] if t in _calls else [])
 
-table = df[["rank", "ticker", "company", "focus_score", "Δ", "news", "momentum",
+table = df[["rank", "ticker", "company", "focus_score", "Δ", "call", "news", "momentum",
             "catalyst", "newsflow", "risk", "conviction_mult"]]
 
 with card("Leaderboard", icon_name="leaderboard",
@@ -85,6 +87,11 @@ with card("Leaderboard", icon_name="leaderboard",
                 "Δ": st.column_config.NumberColumn(
                     "Δ rank", format="%d", width=70,
                     help="Places moved since the previous run (positive = climbed)"),
+                "call": st.column_config.MultiselectColumn(
+                    "Signal", width=105,
+                    options=["Strong Buy", "Buy", "Neutral", "Sell", "Strong Sell"],
+                    color=["green", "green", "gray", "red", "red"],
+                    help="The signal engine's current call - see the Signals page"),
                 "news": st.column_config.NumberColumn(
                     "News", format="%+.2f", width=70, help="14-day news signal (−1 to +1)"),
                 "momentum": st.column_config.NumberColumn("Momentum", format="%.2f"),

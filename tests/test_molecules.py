@@ -42,7 +42,7 @@ def _study(nct, title, name, others, sponsor="Merck Sharp & Dohme LLC", phase="P
         "designModule": {"phases": [phase], "studyType": "INTERVENTIONAL"},
         "armsInterventionsModule": {"interventions": [
             {"name": name, "otherNames": others}, {"name": "Pembrolizumab"}]},
-        "sponsorCollaboratorsModule": {"leadSponsor": {"name": sponsor}}}}
+        "sponsorCollaboratorsModule": {"leadSponsor": {"name": sponsor, "class": "INDUSTRY"}}}}
 
 
 def test_ingest_finds_partner_trials_discovers_aliases_and_papers(monkeypatch):
@@ -102,3 +102,24 @@ def test_mentions_ignores_formatting():
     assert proc_mol.mentions("MRNA 4157 data at ESMO", ["mRNA-4157"])
     assert not proc_mol.mentions("mRNA vaccine data", ["mRNA-4157"])
     assert proc_mol.top_phase(["P1", "P2/P3", "P2"]) == "P2/P3"
+
+
+def test_clean_aliases_keeps_names_and_drops_arm_labels():
+    got = ingest_mol.clean_aliases(
+        ["VX-548 Placebo", "Suzetrigine (Journavx)", "suzetrigine 100mg", "JOURNAVX®",
+         "Seasonal influenza vaccine", "Formerly known as STx-02", "SUZ",
+         "scAAVrh74.MHCK7.hSGCB, bidridistrogene xeboparvovec",
+         "Long-Term Follow-up Study of patients who received BEAM-101"],
+        known=["suzetrigine", "VX-548"])
+    assert got == ["Journavx", "STx-02", "scAAVrh74.MHCK7.hSGCB",
+                   "bidridistrogene xeboparvovec"]
+
+
+def test_investigator_and_phase4_trials_are_not_catalysts():
+    assert ingest_mol.material_trial("search", "INDUSTRY", "P3")
+    assert ingest_mol.material_trial("pinned", "OTHER", "P4")          # you pinned it
+    assert not ingest_mol.material_trial("search", "OTHER", "P3")      # university-run
+    assert not ingest_mol.material_trial("search", "INDUSTRY", "P4")
+    assert not ingest_mol.material_trial("search", "INDUSTRY", "NA")
+    assert ingest_mol.material_trial("search", None, "P2")             # class unknown
+    assert ingest_mol.material_trial("search", float("nan"), "P2")     # NULL read back as NaN

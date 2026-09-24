@@ -17,8 +17,8 @@ from streamlit.testing.v1 import AppTest
 
 DASH = Path(__file__).resolve().parents[1] / "dashboard"
 APP = str(DASH / "Home.py")
-PAGES = ["overview", "focus", "stock", "catalysts", "news", "watchlist", "compare",
-         "alerts", "portfolio"]
+PAGES = ["overview", "signals", "focus", "stock", "smart_money", "molecules", "backtest",
+         "catalysts", "news", "watchlist", "compare", "alerts", "portfolio"]
 
 if str(DASH) not in sys.path:
     sys.path.insert(0, str(DASH))
@@ -164,6 +164,67 @@ def _seed() -> None:
         "event_score": 1.0, "fetched_at": now} for i, t in enumerate(tickers)])
     catalysts.run()
     score.run()
+    _seed_intelligence(tickers, today, now)
+
+
+def _seed_intelligence(tickers, today, now) -> None:
+    """13F, short volume, options, a tracked molecule, signals and backtests."""
+    import json
+
+    from bioterm import store
+    from bioterm.db import (backtests, bulk_upsert, inst_filers, inst_holdings,
+                            molecule_trials, options_snapshots, short_volume)
+    from bioterm.process import molecules as mol_links
+    from bioterm.process import signals
+
+    bulk_upsert(inst_filers, [{"cik": "0001", "name": "BAKER BROS ADVISORS LP",
+                               "short_name": "Baker Bros", "last_period": today,
+                               "last_filed": today, "checked_at": now}])
+    q0, q1 = today - timedelta(days=200), today - timedelta(days=100)
+    bulk_upsert(inst_holdings, [
+        {"id": f"0001|{p}|{c}", "cik": "0001", "period": p, "filed_date": p + timedelta(days=40),
+         "accession": "x", "cusip": c, "issuer": f"{t} THERAPEUTICS INC", "title_class": "COM",
+         "ticker": t, "shares": sh, "value": sh * 10.0, "fetched_at": now}
+        for p, c, t, sh in ((q0, "000000001", "AAAA", 1e6), (q1, "000000001", "AAAA", 2e6),
+                            (q0, "000000002", "BBBB", 5e5), (q1, "000000003", "CCCC", 3e5))])
+    days = pd.bdate_range(today - timedelta(days=40), today)
+    bulk_upsert(short_volume, [{"ticker": t, "date": d.date(), "short_volume": 4e4 + 500 * i,
+                                "short_exempt": 0, "total_volume": 1e5}
+                               for t in tickers for i, d in enumerate(days)])
+    bulk_upsert(options_snapshots, [{
+        "ticker": "AAAA", "date": today, "spot": 12.0, "expiry": today + timedelta(days=24),
+        "days_to_expiry": 24, "atm_iv": 0.9, "iv_back": 0.7, "implied_move": 0.22,
+        "call_volume": 4000, "put_volume": 800, "call_oi": 2000, "put_oi": 1500,
+        "pc_volume_ratio": 0.2, "pc_oi_ratio": 0.75, "vol_oi_ratio": 1.37, "fetched_at": now}])
+    mid = store.save_molecule({"ticker": "AAAA", "name": "aaaamab", "aliases": "AA-101",
+                               "indication": "a rare disease", "nct_ids": "NCT00000001"})
+    bulk_upsert(molecule_trials, [{
+        "id": f"{mid}|NCT00000001", "molecule_id": mid, "ticker": "AAAA",
+        "nct_id": "NCT00000001", "sponsor": "Aaaa", "title": "A pivotal study of aaaamab",
+        "phase": "P3", "status": "RECRUITING", "start_date": today - timedelta(days=400),
+        "primary_completion_date": today + timedelta(days=40),
+        "url": "https://clinicaltrials.gov/study/NCT00000001", "source": "pinned",
+        "fetched_at": now}])
+    mol_links.run()
+    signals.run()
+    eq_dates = [str((today - timedelta(days=30 * i)).isoformat()) for i in (3, 2, 1, 0)]
+    results = {
+        "factor": {"factors": {"momentum": {"label": "Momentum", "ic_21": 0.04, "ic_t_21": 2.1,
+                                            "quintiles_63": [-0.02, -0.01, 0, 0.01, 0.03],
+                                            "spread_63": 0.05, "top_hit_rate": 0.6}},
+                   "dates": 40, "universe": 3,
+                   "equity": {"date": eq_dates, "top": [1, 1.05, 1.1, 1.2],
+                              "universe": [1, 1.01, 1.02, 1.04], "xbi": [1, 1.0, 1.01, 1.03]}},
+        "events": {"n_events": 12, "by_code": {"golden_cross": {
+            "side": "BUY", "n": 12, "tickers": 3, "mean_63": 0.03, "hit_63": 0.6,
+            "t_63": 1.4}}},
+        "track": {"n": 2, "by_label": {"BUY": {"n": 2, "x_21": 0.02, "hit_21": 0.5}},
+                  "recent": [{"ticker": "AAAA", "asof": str(today), "label": "BUY",
+                              "ret_21": 0.04, "ret_open": 0.05}]},
+    }
+    bulk_upsert(backtests, [{"id": f"{k}|{today}", "kind": k, "ts": now,
+                             "params": json.dumps({"horizons": [21, 63, 126]}),
+                             "results": json.dumps(v)} for k, v in results.items()])
 
 
 @pytest.mark.parametrize("page", PAGES)
@@ -196,3 +257,33 @@ def test_portfolio_price_follows_the_ticker():
     at.selectbox(key="pf_tk").select("CCCC").run()
     c = at.number_input(key="pf_px::CCCC").value
     assert a > 0 and c > 0 and a != c
+
+
+def test_signals_board_and_drill_down():
+    _seed()
+    at = _render("signals")
+    assert not at.exception
+    assert at.selectbox(key="sg_pick").value in {"AAAA", "BBBB", "CCCC"}
+    at.selectbox(key="sg_pick").select("CCCC").run()
+    assert not at.exception
+    at.segmented_control(key="sg_side").set_value("Sell side").run()
+    assert not at.exception
+
+
+def test_molecule_editor_tracks_a_new_molecule():
+    _seed()
+    at = _render("molecules")
+    assert not at.exception
+    from bioterm import store
+
+    n0 = len(store.get_molecules())
+    at.selectbox(key="mol_add_tk").select("BBBB")
+    at.text_input(key="mol_add_name").input("bbbbnib")
+    at.text_input(key="mol_add_aliases").input("BB-202, Bbrand")
+    at.text_input(key="mol_add_ncts").input("NCT01234567, not-an-id")
+    next(b for b in at.button if b.label == "Track molecule").click().run()
+    assert not at.exception
+    mols = {m["name"]: m for m in store.get_molecules()}
+    assert len(mols) == n0 + 1
+    assert mols["bbbbnib"]["aliases"] == ["BB-202", "Bbrand"]
+    assert mols["bbbbnib"]["nct_ids"] == ["NCT01234567"]

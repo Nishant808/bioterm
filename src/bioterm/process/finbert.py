@@ -26,6 +26,8 @@ log = logging.getLogger("bioterm.process.finbert")
 # Google News appends " - Publisher" (capitalised, a few words); a lowercase or
 # long tail is part of the headline itself ("... Phase 3 - topline due")
 _PUBLISHER_TAIL = re.compile(r"\s+-\s+[A-Z0-9][^-]{1,59}$")
+# ... or a bare domain ("- timothysykes.com", "- simplywall.st")
+_DOMAIN_TAIL = re.compile(r"\s+-\s+[a-z0-9][\w-]*(?:\.[a-z0-9-]+)+$", re.I)
 
 Scorer = Callable[[list[str]], list[dict]]
 
@@ -41,6 +43,9 @@ def available() -> bool:
 
 def clean_title(title: str) -> str:
     t = " ".join(str(title or "").split())
+    d = _DOMAIN_TAIL.search(t)
+    if d:
+        t = t[:d.start()]
     m = _PUBLISHER_TAIL.search(t)
     if m and len(m.group(0).split()) <= 7:
         return t[:m.start()]

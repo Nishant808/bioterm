@@ -246,9 +246,10 @@ def page_header(title: str, subtitle: str | None = None) -> None:
 def footer() -> None:
     st.html(
         "<div class='bt-footer'>"
-        "<span><b>BioTerm</b> · catalyst-monitoring terminal</span>"
+        "<span><b>BioTerm</b> · biotech intelligence terminal</span>"
         "<span>Monitoring and screening only — not investment advice. "
-        "Data: yfinance · SEC EDGAR · ClinicalTrials.gov · openFDA · RSS</span>"
+        "Data: yfinance · SEC EDGAR (filings, Form 4, 13F) · ClinicalTrials.gov · "
+        "openFDA · FINRA short volume · Europe PMC · OpenFIGI · RSS</span>"
         "</div>")
 
 
@@ -367,7 +368,8 @@ def headline_rows(df: pd.DataFrame, *, show_rank: dict | None = None,
 
 
 SOURCE_LABELS = {"news-extraction": "from news", "clinicaltrials.gov": "ClinicalTrials.gov",
-                 "yfinance": "earnings calendar", "manual": "pinned by you"}
+                 "yfinance": "earnings calendar", "manual": "pinned by you",
+                 "molecule-tracking": "molecule tracking"}
 
 
 def catalyst_title(title) -> str:
@@ -405,7 +407,7 @@ def _clip(s: str, n: int) -> str:
 
 
 ALERT_ICONS = {"score move": ("trending_up", ACCENT), "catalyst soon": ("event_upcoming", WARN),
-               "headline": ("newspaper", VIOLET)}
+               "headline": ("newspaper", VIOLET), "signal": ("swap_vert", POS)}
 
 
 def alert_detail(detail) -> str:
@@ -431,6 +433,174 @@ def alert_rows(items: list[dict]) -> None:
             f"<div class='bt-row-h'><span class='bt-tk'>{esc(a.get('ticker'))}</span>"
             f"<span class='bt-row-kind'>{esc(str(a.get('kind', '')).capitalize())}</span></div>"
             f"<div class='bt-row-s wrap'>{esc(alert_detail(a.get('detail')))}</div>"
+            "</div></div>")
+    _list(out)
+
+
+# ---------------------------------------------------------------- signals
+# The five calls, strongest buy first. BUY/SELL are states (good/bad for the
+# name), so they take POS/NEG; the STRONG variants add weight, not a new hue.
+SIGNAL_LABELS = ["STRONG BUY", "BUY", "NEUTRAL", "SELL", "STRONG SELL"]
+SIGNAL_BADGE = {"STRONG BUY": "green strong", "BUY": "green", "NEUTRAL": "gray",
+                "SELL": "red", "STRONG SELL": "red strong"}
+SIGNAL_COLORS = {"STRONG BUY": POS, "BUY": "#8FDCAA", "NEUTRAL": MUTED, "SELL": "#F4A1A4",
+                 "STRONG SELL": NEG}
+REGIMES = {"risk_on": ("Risk-on", POS, "XBI above a rising 50- and 200-day average: buy "
+                                        "signals get more weight"),
+           "neutral": ("Neutral", MUTED, "Mixed sector trend: signals count at face value"),
+           "risk_off": ("Risk-off", NEG, "XBI below its 200-day average or in a steep "
+                                          "drawdown: buy signals are discounted, sell "
+                                          "signals weigh more")}
+
+# Evidence families - a STRONG call needs agreement from at least two.
+SIGNAL_FAMILIES = {
+    "technical": ("Price & volume", "candlestick_chart"),
+    "event":     ("Catalysts & pipeline", "biotech"),
+    "capital":   ("Cash & dilution", "account_balance"),
+    "people":    ("Insiders & specialist funds", "groups"),
+    "news":      ("News & regulatory", "newspaper"),
+    "flow":      ("Options & short flow", "waterfall_chart"),
+}
+
+# code -> (name, family, what it looks for)
+DETECTORS: dict[str, tuple[str, str, str]] = {
+    "breakout_52w": ("52-week breakout", "technical",
+                     "Close above the prior 52-week high on above-average volume"),
+    "golden_cross": ("Golden cross", "technical", "50-day average crosses above the 200-day"),
+    "death_cross": ("Death cross", "technical", "50-day average crosses below the 200-day"),
+    "reclaim_sma200": ("Reclaims 200-day", "technical",
+                       "Close back above the 200-day average on rising volume"),
+    "breakdown_sma200": ("Loses 200-day", "technical",
+                         "Close drops below the 200-day average on rising volume"),
+    "rsi_oversold_reversal": ("Oversold reversal", "technical",
+                              "RSI climbs back above 30 after an oversold stretch"),
+    "volume_surge_up": ("Volume surge up", "technical",
+                        "Volume 2.5σ above normal on a 5%+ up day - someone is buying"),
+    "volume_surge_down": ("Volume surge down", "technical",
+                          "Volume 2.5σ above normal on a 5%+ down day"),
+    "crash_day": ("Crash day", "technical", "A single-session drop of 20% or more"),
+    "overbought_exhaustion": ("Overbought exhaustion", "technical",
+                              "RSI 80+, above the upper Bollinger band after a 35%+ month"),
+    "accumulation": ("Accumulation", "technical",
+                     "Chaikin money flow strongly positive while price is still flat"),
+    "distribution": ("Distribution", "technical",
+                     "Money flow strongly negative near the top of the 52-week range"),
+    "relative_strength_leader": ("RS leader", "technical",
+                                 "Top-decile 12-month relative strength in a clean uptrend"),
+    "relative_strength_laggard": ("RS laggard", "technical",
+                                  "Bottom-decile relative strength in a downtrend"),
+    "pre_catalyst_setup": ("Pre-catalyst setup", "event",
+                           "A clinical/regulatory readout 10-120 days out, the stock not yet "
+                           "extended, and enough cash to get there"),
+    "sell_the_news_risk": ("Sell-the-news risk", "event",
+                           "Up 40%+ in three months into a binary event"),
+    "catalyst_vacuum": ("Catalyst vacuum", "event",
+                        "A readout just passed and nothing is dated for six months"),
+    "pipeline_advance": ("Pipeline advance", "event", "A new Phase 2/3 trial just started"),
+    "dilution_filing": ("Dilution filing", "capital",
+                        "424B5 / S-1 / S-3 filed in the last 30 days"),
+    "runway_crunch": ("Runway crunch", "capital",
+                      "Under three quarters of cash and no raise in 90 days"),
+    "going_concern": ("Going-concern doubt", "capital",
+                      "Auditor going-concern language in the latest 10-K/10-Q"),
+    "insider_cluster_buy": ("Insider cluster buy", "people",
+                            "Two or more insiders buying on the open market (60 days)"),
+    "insider_heavy_selling": ("Heavy insider selling", "people",
+                              "Three or more insiders selling $2M+ on the open market"),
+    "specialist_accumulation": ("Specialist accumulation", "people",
+                                "Two or more biotech specialist funds initiated or added (13F)"),
+    "specialist_exit": ("Specialist exit", "people",
+                        "Two or more specialist funds cut or exited (13F)"),
+    "positive_event": ("Positive catalyst news", "news",
+                       "Topline win, approval or similar headline in the last 3 days"),
+    "negative_event": ("Negative catalyst news", "news",
+                       "CRL, failed trial, clinical hold or similar in the last 5 days"),
+    "regulatory_designation": ("FDA designation", "news",
+                               "Breakthrough, fast track, priority review or orphan headline"),
+    "sentiment_inflection": ("Sentiment inflection", "news",
+                             "This week's headline tone vs the prior three weeks"),
+    "unusual_call_activity": ("Unusual call buying", "flow",
+                              "Call volume 1.5x+ open interest with a low put/call ratio"),
+    "unusual_put_activity": ("Unusual put buying", "flow",
+                             "Put volume 1.5x+ open interest with a high put/call ratio"),
+    "short_squeeze_setup": ("Short-squeeze setup", "flow",
+                            "20%+ of float short, price turning up, shorts not adding"),
+    "short_pressure_rising": ("Short pressure rising", "flow",
+                              "FINRA short share of volume jumping vs its 20-day average"),
+}
+
+
+def detector_name(code: str) -> str:
+    return DETECTORS.get(str(code), (str(code).replace("_", " ").capitalize(), "", ""))[0]
+
+
+def detector_family(code: str) -> str:
+    return DETECTORS.get(str(code), ("", "event", ""))[1]
+
+
+def signal_badge(label) -> str:
+    lab = str(label or "NEUTRAL")
+    return badge(lab.title(), SIGNAL_BADGE.get(lab, "gray"))
+
+
+def regime_word(regime) -> tuple[str, str, str]:
+    return REGIMES.get(str(regime or "neutral"), REGIMES["neutral"])
+
+
+def _meter(strength: float, side: str) -> str:
+    """A five-tick strength meter; ticks fill in the side's colour."""
+    n = max(0, min(5, int(round(float(strength or 0) / 0.19 + 0.01))))
+    cls = "buy" if side == "BUY" else "sell"
+    ticks = "".join(f"<i class='{'on' if i < n else ''}'></i>" for i in range(5))
+    return f"<span class='bt-meter {cls}' title='strength {float(strength or 0):.2f}'>{ticks}</span>"
+
+
+def signal_rows(df: pd.DataFrame, *, show_ticker: bool = True) -> None:
+    """Fired detectors: side glyph, name + family, strength meter, then the
+    engine's plain-language reason."""
+    out = []
+    for _, r in df.iterrows():
+        side = str(r.get("side"))
+        up = side == "BUY"
+        glyph = icon("north_east" if up else "south_east")
+        fam = SIGNAL_FAMILIES.get(str(r.get("family") or detector_family(r.get("code"))),
+                                  ("", ""))[0]
+        tk = f"<span class='bt-tk'>{esc(r.get('ticker'))}</span>" if show_ticker else ""
+        out.append(
+            "<div class='bt-row'>"
+            f"<div class='bt-row-l'><span class='bt-side {'buy' if up else 'sell'}'>"
+            f"{glyph}<b>{'Buy' if up else 'Sell'}</b></span></div>"
+            "<div class='bt-row-m'>"
+            f"<div class='bt-row-h'>{tk}<span class='bt-sig-name'>"
+            f"{esc(detector_name(r.get('code')))}</span>{_meter(r.get('strength'), side)}"
+            f"<span class='bt-src'>{esc(fam)}</span></div>"
+            f"<div class='bt-row-s wrap'>{esc(_clip(plain(r.get('title')), 170))}</div>"
+            "</div></div>")
+    _list(out)
+
+
+def call_rows(df: pd.DataFrame, *, n_reasons: int = 1) -> None:
+    """Signal calls: ticker + label badge + net, then the strongest reasons."""
+    out = []
+    for _, r in df.iterrows():
+        tops = [t for t in (r.get("top_obj") or []) if isinstance(t, dict)]
+        side = "BUY" if float(r.get("net") or 0) >= 0 else "SELL"
+        tops = [t for t in tops if t.get("side") == side] or tops
+        why = " · ".join(esc(_clip(plain(t.get("title")), 110)) for t in tops[:n_reasons])
+        was = r.get("prev_label")
+        changed = (isinstance(was, str) and was and was != r.get("label"))
+        chg = f"<span class='bt-src'>was {esc(str(was).title())}</span>" if changed else \
+            ("<span class='bt-src'>new</span>" if not isinstance(was, str) else "")
+        net = float(r.get("net") or 0)
+        out.append(
+            "<div class='bt-row'>"
+            f"<div class='bt-row-l'><span class='bt-tk'>{esc(r.get('ticker'))}</span></div>"
+            "<div class='bt-row-m'>"
+            f"<div class='bt-row-h'>{signal_badge(r.get('label'))}"
+            f"<span class='bt-net' style='color:{POS if net > 0 else NEG if net < 0 else MUTED}'>"
+            f"{net:+.2f}</span>{chg}"
+            f"<span class='bt-src'>{esc(_clip(display_name(r.get('name')), 38))}</span></div>"
+            f"<div class='bt-row-s wrap'>{why}</div>"
             "</div></div>")
     _list(out)
 
@@ -650,6 +820,29 @@ _CSS = f"""
 .bt-empty .bt-i {{ font-size: 1.9rem; color: var(--bt-faint); }}
 .bt-empty .t {{ color: var(--bt-text2); font-weight: 600; font-size: .95rem; }}
 .bt-empty .b {{ font-size: .84rem; max-width: 46ch; }}
+
+/* signals: strong calls, side glyph, strength meter, net */
+.bt-badge.strong {{ font-weight: 700; letter-spacing: .02em; }}
+.bt-badge.green.strong {{ background: rgba(63,185,107,.30); color: #B5EBC8;
+  box-shadow: inset 0 0 0 1px rgba(63,185,107,.45); }}
+.bt-badge.red.strong {{ background: rgba(229,72,77,.30); color: #F8C3C5;
+  box-shadow: inset 0 0 0 1px rgba(229,72,77,.45); }}
+.bt-side {{ display: inline-flex; align-items: center; gap: .2rem; font-size: .74rem;
+  font-weight: 600; padding: .12rem .4rem; border-radius: 6px; }}
+.bt-side .bt-i {{ font-size: .95rem; }}
+.bt-side.buy {{ color: #8FDCAA; background: rgba(63,185,107,.12); }}
+.bt-side.sell {{ color: #F4A1A4; background: rgba(229,72,77,.12); }}
+.bt-sig-name {{ font-weight: 600; font-size: .86rem; color: var(--bt-text); }}
+.bt-meter {{ display: inline-flex; gap: 2px; align-items: center; }}
+.bt-meter i {{ width: 9px; height: 5px; border-radius: 2px; background: var(--bt-border2); }}
+.bt-meter.buy i.on {{ background: var(--bt-pos); }}
+.bt-meter.sell i.on {{ background: var(--bt-neg); }}
+.bt-net {{ font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: .8rem;
+  font-weight: 600; font-variant-numeric: tabular-nums; }}
+.bt-regime {{ display: inline-flex; align-items: center; gap: .45rem; font-size: .8rem;
+  color: var(--bt-text2); padding: .3rem .7rem; border: 1px solid var(--bt-border);
+  border-radius: 999px; background: var(--bt-surface); white-space: nowrap; }}
+.bt-regime i {{ width: 7px; height: 7px; border-radius: 50%; display: inline-block; }}
 
 /* footer */
 .bt-footer {{ display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;

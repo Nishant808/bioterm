@@ -8,13 +8,16 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from _shared import (catalysts_df, filings_df, fundamentals_row, insider_txns_df, money,
-                     news_df, pct, prices_df, q, score_history, scores_df, sentiment_df,
-                     sentiment_series, technicals_df, trials_df, universe_df)
+from _shared import (catalysts_df, filings_df, fundamentals_row, insider_txns_df,
+                     molecules_df, money, news_df, options_history, pct, prices_df, q,
+                     score_history, scores_df, sentiment_df, sentiment_series, short_flow,
+                     short_series, signal_board, signal_history, signals_today, smart_money,
+                     technicals_df, trials_df, universe_df)
 from _ui import (ACCENT, BORDER_STRONG, CATALYST_TYPES, FAMILIES, GRID, MUTED, NEG,
                  PHASE_COLORS, POS, SMA_COLORS, WARN, card, catalyst_family, catalyst_label,
                  catalyst_title, chart, display_name, empty_state, esc, headline_rows,
-                 kpi_row, md_safe, page_header, phase_group, plotly_layout, spark, tone_of)
+                 kpi_row, md_safe, page_header, phase_group, plotly_layout, regime_word,
+                 signal_badge, signal_rows, spark, tone_of)
 from bioterm import store
 
 CATALYST_KEYS = list(CATALYST_TYPES)
@@ -22,7 +25,7 @@ TYPE_LABELS = [v[0] for v in CATALYST_TYPES.values()]
 TYPE_COLORS = [FAMILIES[catalyst_family(k)][2] for k in CATALYST_TYPES]
 
 page_header("Stock detail",
-            "Price, pipeline, catalysts, news, insiders and filings for one name")
+            "Signals, price, pipeline, catalysts, news, insiders, funds and filings for one name")
 
 uni = universe_df()
 scores = scores_df()
@@ -53,7 +56,12 @@ rq = fund.get("runway_quarters")
 rq_ok = rq is not None and not pd.isna(rq)
 
 # ------------------------------------------------------------------ identity
+board = signal_board()
+brow = board[board["ticker"] == ticker]
+call = brow.iloc[0].to_dict() if not brow.empty else None
 badges = []
+if call:
+    badges.append(signal_badge(call["label"]))
 if on_wl:
     badges.append(f"<span class='bt-badge blue'>On watchlist · conviction {int(wl['conviction'])}</span>")
 if int(meta.get("in_xbi") or 0) == 1:
@@ -128,10 +136,44 @@ with notes_col:
             st.toast("Note saved", icon=":material/check_circle:")
 
 # ------------------------------------------------------------------ tabs
-tab_px, tab_pipe, tab_cat, tab_news, tab_ins, tab_fil = st.tabs([
-    ":material/candlestick_chart: Price & technicals", ":material/biotech: Pipeline",
-    ":material/event: Catalysts", ":material/newspaper: News & sentiment",
-    ":material/groups: Insiders", ":material/description: SEC filings"])
+tab_sig, tab_px, tab_pipe, tab_cat, tab_news, tab_ins, tab_flow, tab_fil = st.tabs([
+    ":material/swap_vert: Signals", ":material/candlestick_chart: Price & technicals",
+    ":material/biotech: Pipeline", ":material/event: Catalysts",
+    ":material/newspaper: News & sentiment", ":material/groups: Insiders",
+    ":material/account_balance: Funds & flow", ":material/description: SEC filings"])
+
+# ---- signals
+with tab_sig:
+    if call is None:
+        empty_state("No signal call yet",
+                    "The signal engine runs after every refresh once prices have landed.",
+                    "swap_vert")
+    else:
+        r_word, _, r_tip = regime_word(call.get("regime"))
+        was = call.get("prev_label")
+        with kpi_row(4, "sig"):
+            st.metric("Call", str(call["label"]).title(),
+                      delta=f"was {str(was).title()}" if isinstance(was, str) and was != call["label"]
+                      else "unchanged since last run" if isinstance(was, str) else "first call",
+                      delta_color="off", delta_arrow="off", border=True)
+            sh = signal_history(ticker)
+            st.metric("Net signal", f"{call['net']:+.2f}", delta="bull − bear, −1 to +1",
+                      delta_color="off", delta_arrow="off", border=True,
+                      chart_data=spark(sh["net"]) if len(sh) > 1 else None, chart_type="line")
+            st.metric("Bull / bear", f"{call['bull']:.2f} / {call['bear']:.2f}",
+                      delta=f"{int(call['n_buy'])} buy · {int(call['n_sell'])} sell detectors",
+                      delta_color="off", delta_arrow="off", border=True)
+            st.metric("Sector regime", r_word, delta="XBI trend filter", delta_color="off",
+                      delta_arrow="off", border=True, help=r_tip)
+        ev = signals_today()
+        ev = ev[ev["ticker"] == ticker].sort_values(["side", "strength"], ascending=[True, False])
+        if ev.empty:
+            empty_state("Nothing firing", "No detector fires for this name on the latest run.",
+                        "sensors_off")
+        else:
+            signal_rows(ev, show_ticker=False)
+        st.page_link("app_pages/signals.py", label="Signal board and method",
+                     icon=":material/arrow_forward:", query_params={"ticker": ticker})
 
 # ---- price
 with tab_px:
@@ -236,6 +278,26 @@ with tab_px:
 
 # ---- pipeline
 with tab_pipe:
+    mm = molecules_df()
+    mm = mm[mm["ticker"] == ticker] if not mm.empty else mm
+    if not mm.empty:
+        with card("Tracked molecules", icon_name="science", meta="Linked by name and NCT ID"):
+            st.dataframe(
+                mm.assign(next_readout=mm["next_readout"])[
+                    ["name", "aliases", "top_phase", "n_active", "n_trials", "next_readout",
+                     "n_news_30d", "papers_total"]],
+                hide_index=True, column_config={
+                    "name": st.column_config.TextColumn("Molecule"),
+                    "aliases": st.column_config.ListColumn("Also known as"),
+                    "top_phase": st.column_config.TextColumn("Top phase", width=80),
+                    "n_active": st.column_config.NumberColumn("Active trials", width=90),
+                    "n_trials": st.column_config.NumberColumn("All trials", width=80),
+                    "next_readout": st.column_config.DateColumn("Next readout",
+                                                                format="MMM D, YYYY"),
+                    "n_news_30d": st.column_config.NumberColumn("News 30d", width=75),
+                    "papers_total": st.column_config.NumberColumn("Papers", width=70)})
+            st.page_link("app_pages/molecules.py", label="Molecule dossiers",
+                         icon=":material/arrow_forward:")
     tr = trials_df(ticker)
     if tr.empty:
         empty_state("No trials found",
@@ -429,6 +491,86 @@ with tab_ins:
                 "price": st.column_config.NumberColumn("Price", format="$%.2f"),
                 "shares": st.column_config.NumberColumn("Shares", format="%,d"),
                 "url": st.column_config.LinkColumn("Form 4", display_text="Open")})
+
+# ---- funds & flow
+with tab_flow:
+    ch, summ = smart_money()
+    mine = ch[ch["ticker"] == ticker] if not ch.empty else ch
+    sf = short_flow()
+    srow_sf = sf[sf["ticker"] == ticker] if not sf.empty else sf
+    oh = options_history(ticker)
+    with kpi_row(4, "flow"):
+        holders = int((mine["shares1"] > 0).sum()) if not mine.empty else 0
+        buying = int(mine["status"].isin(["new", "added"]).sum()) if not mine.empty else 0
+        selling = int(mine["status"].isin(["trimmed", "exited"]).sum()) if not mine.empty else 0
+        st.metric("Specialist funds holding", holders,
+                  delta=f"{buying} buying · {selling} selling last quarter", delta_color="off",
+                  delta_arrow="off", border=True)
+        inst = fund.get("held_pct_institutions")
+        st.metric("Institutional ownership",
+                  "–" if inst is None or pd.isna(inst) else f"{float(inst) * 100:.0f}%",
+                  delta=None if fund.get("held_pct_insiders") is None
+                  or pd.isna(fund.get("held_pct_insiders"))
+                  else f"insiders {float(fund['held_pct_insiders']) * 100:.1f}%",
+                  delta_color="off", delta_arrow="off", border=True)
+        spf = fund.get("short_percent_float")
+        st.metric("Short interest",
+                  "–" if spf is None or pd.isna(spf) else f"{float(spf) * 100:.1f}% of float",
+                  delta=None if srow_sf.empty else
+                  f"short volume {srow_sf.iloc[0]['ratio_5d'] * 100:.0f}% (5d) vs "
+                  f"{srow_sf.iloc[0]['ratio_20d'] * 100:.0f}% (20d)",
+                  delta_color="off", delta_arrow="off", border=True,
+                  help=None if fund.get("short_ratio") is None or pd.isna(fund.get("short_ratio"))
+                  else f"Days to cover: {float(fund['short_ratio']):.1f}")
+        o = oh.iloc[-1] if not oh.empty else None
+        st.metric("Options-implied move",
+                  "–" if o is None or pd.isna(o.get("implied_move"))
+                  else f"±{float(o['implied_move']) * 100:.0f}%",
+                  delta=None if o is None or pd.isna(pd.to_datetime(o.get("expiry"),
+                                                                    errors="coerce"))
+                  else f"by {pd.to_datetime(o['expiry']):%b %d} · put/call "
+                       f"{'–' if pd.isna(o.get('pc_volume_ratio')) else format(float(o['pc_volume_ratio']), '.2f')}",
+                  delta_color="off", delta_arrow="off", border=True,
+                  help="At-the-money straddle ÷ spot for the front expiry")
+    fcol, scol = st.columns(2, gap="medium")
+    with fcol:
+        with card("Specialist funds (13F)", icon_name="account_balance"):
+            if mine.empty:
+                empty_state("No tracked specialist fund reports this name", "",
+                            "account_balance")
+            else:
+                mv = mine.assign(status_b=mine["status"].map(lambda x: [str(x).title()]))
+                st.dataframe(
+                    mv.sort_values("value1", ascending=False)[
+                        ["fund", "status_b", "shares1", "pct_change", "value1"]],
+                    hide_index=True, column_config={
+                        "fund": st.column_config.TextColumn("Fund", width="medium"),
+                        "status_b": st.column_config.MultiselectColumn(
+                            "Change", options=["New", "Added", "Held", "Trimmed", "Exited"],
+                            color=["green", "green", "gray", "orange", "red"], width=95),
+                        "shares1": st.column_config.NumberColumn("Shares", format="compact"),
+                        "pct_change": st.column_config.NumberColumn("Change",
+                                                                    format="percent"),
+                        "value1": st.column_config.NumberColumn("Value", format="compact")})
+                st.caption(f"Quarter to {pd.Timestamp(mine['period'].max()):%b %d, %Y} vs "
+                           "each fund's previous quarter")
+    with scol:
+        with card("Short share of volume", icon_name="trending_down", meta="FINRA daily"):
+            ss = short_series(ticker)
+            if ss.empty or len(ss) < 2:
+                empty_state("No short-volume history yet", "", "trending_down")
+            else:
+                ss["ratio_5"] = ss["ratio"].rolling(5, min_periods=1).mean()
+                fig = go.Figure()
+                fig.add_trace(go.Bar(x=ss["date"], y=ss["ratio"], name="Daily",
+                                     marker=dict(color="#3A4557"),
+                                     hovertemplate="%{y:.0%}"))
+                fig.add_trace(go.Scatter(x=ss["date"], y=ss["ratio_5"], name="5-day average",
+                                         mode="lines", line=dict(color=ACCENT, width=2),
+                                         hovertemplate="%{y:.0%}"))
+                fig.update_layout(**plotly_layout(height=260, hovermode="x unified"))
+                fig.update_yaxes(tickformat=".0%", range=[0, 1])
+                chart(fig, key="short_series")
 
 # ---- filings
 with tab_fil:

@@ -4,11 +4,13 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from _shared import catalysts_df, news_df, prev_scores_df, q, scores_df, sentiment_df
-from _ui import (card, catalyst_rows, display_name, empty_state, headline_rows, kpi_row,
-                 page_header, spark, tone_of)
+from _shared import (catalysts_df, news_df, prev_scores_df, q, scores_df, sentiment_df,
+                     signal_board)
+from _ui import (call_rows, card, catalyst_rows, display_name, empty_state, esc,
+                 headline_rows, kpi_row, page_header, regime_word, spark, tone_of)
 
-page_header("Overview", "Biotech & pharma catalyst monitor · 6-month swing horizon")
+page_header("Overview", "Biotech & pharma intelligence terminal · early signals on a "
+                        "6-month swing horizon")
 
 scores = scores_df()
 if scores.empty:
@@ -59,7 +61,20 @@ word, _ = tone_of(signal)
 wl = scores[scores["is_watchlist"] == 1]
 wl_top = int((wl["rank"] <= 20).sum())
 
-with kpi_row(4, "overview"):
+board = signal_board()
+n_buy = int(board["label"].isin(["BUY", "STRONG BUY"]).sum()) if not board.empty else 0
+n_sell = int(board["label"].isin(["SELL", "STRONG SELL"]).sum()) if not board.empty else 0
+n_strong = int(board["label"].str.startswith("STRONG").sum()) if not board.empty else 0
+regime = str(board["regime"].dropna().iloc[0]) \
+    if not board.empty and board["regime"].notna().any() else None
+
+with kpi_row(5, "overview"):
+    st.metric("Signals · buy / sell", f"{n_buy} / {n_sell}" if not board.empty else "–",
+              delta=(f"{n_strong} strong · sector {regime_word(regime)[0].lower()}"
+                     if regime else "Waiting for the first signal run"),
+              delta_color="off", delta_arrow="off", border=True,
+              help="Names the signal engine currently calls Buy or Sell (Strong needs two "
+                   "independent evidence families). Details on the Signals page.")
     st.metric("Catalysts · next 30 days", len(next30),
               delta=f"{len(horizon)} within 6 months", delta_color="off", delta_arrow="off",
               help="Dated catalysts in the next 30 days. The bars show catalysts per week "
@@ -81,6 +96,29 @@ with kpi_row(4, "overview"):
               delta=f"{len(scores)} names tracked", delta_color="off", delta_arrow="off",
               help="How many of your watchlist names rank in the top 20 by Focus Score.",
               border=True)
+
+# ------------------------------------------------------------------ signal radar
+if not board.empty:
+    r_word, r_col, r_tip = regime_word(regime)
+    st.html(f"<div class='bt-regime' title='{esc(r_tip)}'><i style='background:{r_col}'></i>"
+            f"Sector regime · <b>{esc(r_word)}</b></div>")
+    bcol, scol = st.columns(2, gap="medium")
+    buys = board[board["label"].isin(["STRONG BUY", "BUY"])].sort_values("net", ascending=False)
+    sells = board[board["label"].isin(["STRONG SELL", "SELL"])].sort_values("net")
+    with bcol:
+        with card("Buy radar", icon_name="north_east", meta=f"{len(buys)} names"):
+            if buys.empty:
+                empty_state("No buy calls on this run", "", "trending_flat")
+            else:
+                call_rows(buys.head(6))
+    with scol:
+        with card("Sell radar", icon_name="south_east", meta=f"{len(sells)} names"):
+            if sells.empty:
+                empty_state("No sell calls on this run", "", "trending_flat")
+            else:
+                call_rows(sells.head(6))
+    st.page_link("app_pages/signals.py", label="Full signal board and evidence",
+                 icon=":material/arrow_forward:")
 
 # ------------------------------------------------------------------ focus table
 DRIVERS = ["Catalyst", "Momentum", "News flow", "Funding risk", "Insider buying",

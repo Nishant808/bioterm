@@ -10,8 +10,8 @@ from bioterm import alerts as alert_engine
 from bioterm import store
 
 page_header("Alerts",
-            "Rules run on every fast refresh · new hits are logged, and sent to Telegram "
-            "if configured")
+            "Rules run on every fast refresh · score moves, catalysts, headlines and signal "
+            "changes are logged, and sent to Telegram if configured")
 
 
 @st.cache_data(ttl=120, show_spinner=False)
@@ -44,6 +44,12 @@ with st.expander("Alert rules", icon=":material/tune:", expanded=False):
     rules["event_tags"] = st.multiselect("High-signal event tags",
                                          sorted(set(all_tags) | set(rules["event_tags"])),
                                          default=base)
+    rules["signal_labels"] = st.multiselect(
+        "Signal calls to alert on", ["STRONG BUY", "BUY", "SELL", "STRONG SELL"],
+        default=[x for x in (rules.get("signal_labels") or [])
+                 if x in ("STRONG BUY", "BUY", "SELL", "STRONG SELL")],
+        format_func=str.title,
+        help="Fires once when a name's call changes into one of these")
     with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
         rules["watchlist_only"] = st.toggle("Watchlist names only",
                                             value=bool(rules["watchlist_only"]))
@@ -65,8 +71,9 @@ with tab_now:
                     "notifications_off")
     else:
         kinds = pd.Series([a["kind"] for a in firing]).value_counts()
-        with kpi_row(4, "firing"):
+        with kpi_row(5, "firing"):
             st.metric("Firing", len(firing), border=True)
+            st.metric("Signal calls", int(kinds.get("signal", 0)), border=True)
             st.metric("Score moves", int(kinds.get("score move", 0)), border=True)
             st.metric("Catalysts soon", int(kinds.get("catalyst soon", 0)), border=True)
             st.metric("Headlines", int(kinds.get("headline", 0)), border=True)

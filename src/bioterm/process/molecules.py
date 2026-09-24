@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 import pandas as pd
 
 from ..db import bulk_upsert, get_engine, molecule_links, molecule_status, read_sql
-from ..ingest.molecules import norm, terms_for
+from ..ingest.molecules import material_trial, norm, terms_for
 from ..store import get_molecules
 
 log = logging.getLogger("bioterm.process.molecules")
@@ -51,8 +51,7 @@ def run() -> dict:
     now = datetime.now(timezone.utc)
     status = read_sql("SELECT molecule_id, papers_total, discovered_aliases FROM molecule_status")
     st = status.set_index("molecule_id").to_dict("index") if not status.empty else {}
-    trials = read_sql("SELECT molecule_id, phase, status, primary_completion_date "
-                      "FROM molecule_trials")
+    trials = read_sql("SELECT * FROM molecule_trials")
     if not trials.empty:
         trials["primary_completion_date"] = pd.to_datetime(trials["primary_completion_date"],
                                                            errors="coerce")
@@ -95,7 +94,11 @@ def run() -> dict:
                               "detail": json.dumps({"type": c["type"], "ticker": c["ticker"]}),
                               "created_at": now})
         tr = trials[trials["molecule_id"] == m["id"]] if not trials.empty else trials
-        future = tr[tr["primary_completion_date"] >= pd.Timestamp(today)] if not tr.empty else tr
+        # the next readout that can move the stock (not an investigator's Phase 4)
+        mat = tr[[material_trial(a, b, c) for a, b, c in
+                  zip(tr["source"], tr.get("sponsor_class", [None] * len(tr)), tr["phase"])]] \
+            if not tr.empty else tr
+        future = mat[mat["primary_completion_date"] >= pd.Timestamp(today)] if not mat.empty else mat
         rows.append({
             "molecule_id": m["id"], "ticker": m["ticker"],
             "n_trials": int(len(tr)),

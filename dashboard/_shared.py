@@ -263,6 +263,168 @@ def sentiment_series(ticker: str, days: int = 60) -> pd.DataFrame:
     return daily
 
 
+# --------------------------------------------------------------- intelligence
+_BOARD_COLS = ["ticker", "asof", "bull", "bear", "net", "label", "n_buy", "n_sell", "close",
+               "regime", "top", "name", "is_watchlist", "prev_label", "top_obj"]
+
+
+@st.cache_data(ttl=120)
+def signal_board() -> pd.DataFrame:
+    """The latest BUY/SELL call per name, with the previous session's label (so a
+    change of call is visible) and the parsed top reasons."""
+    df = q(
+        "SELECT s.ticker, s.asof, s.bull, s.bear, s.net, s.label, s.n_buy, s.n_sell, "
+        "s.close, s.regime, s.top, u.name, u.is_watchlist, p.label AS prev_label "
+        "FROM signal_scores s JOIN securities u ON u.ticker = s.ticker "
+        "LEFT JOIN signal_scores p ON p.ticker = s.ticker AND p.asof = ("
+        "  SELECT MAX(asof) FROM signal_scores WHERE asof < "
+        "  (SELECT MAX(asof) FROM signal_scores)) "
+        "WHERE s.asof = (SELECT MAX(asof) FROM signal_scores) ORDER BY s.net DESC")
+    if df.empty:
+        return pd.DataFrame(columns=_BOARD_COLS)
+    df["top_obj"] = df["top"].map(lambda s: _loads(s) or [])
+    for c in ("bull", "bear", "net", "close"):
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df
+
+
+@st.cache_data(ttl=120)
+def signals_today() -> pd.DataFrame:
+    """Every detector that fired on the latest signal run (one row per name x code)."""
+    df = q("SELECT ticker, side, code, strength, title, detail FROM signals "
+           "WHERE asof = (SELECT MAX(asof) FROM signals)")
+    if df.empty:
+        return pd.DataFrame(columns=["ticker", "side", "code", "strength", "title", "detail",
+                                     "family", "detail_obj"])
+    df["detail_obj"] = df["detail"].map(lambda s: _loads(s) or {})
+    df["family"] = df["detail_obj"].map(lambda d: d.get("family", "event"))
+    df["strength"] = pd.to_numeric(df["strength"], errors="coerce")
+    return df
+
+
+@st.cache_data(ttl=120)
+def signal_history(ticker: str) -> pd.DataFrame:
+    df = q("SELECT asof, bull, bear, net, label, close FROM signal_scores "
+           "WHERE ticker = :t ORDER BY asof", {"t": ticker})
+    if not df.empty:
+        df["asof"] = pd.to_datetime(df["asof"])
+    return df
+
+
+@st.cache_data(ttl=300)
+def signal_label_history(days: int = 120) -> pd.DataFrame:
+    cut = (pd.Timestamp.today() - pd.Timedelta(days=days)).strftime("%Y-%m-%d")
+    df = q("SELECT asof, label, COUNT(*) AS n FROM signal_scores WHERE asof >= :c "
+           "GROUP BY asof, label ORDER BY asof", {"c": cut})
+    if not df.empty:
+        df["asof"] = pd.to_datetime(df["asof"])
+    return df
+
+
+@st.cache_data(ttl=600)
+def backtest_result(kind: str) -> dict:
+    """Latest stored backtest of one kind (events / factor / track) + its run time."""
+    df = q("SELECT ts, params, results FROM backtests WHERE kind = :k "
+           "ORDER BY ts DESC LIMIT 1", {"k": kind})
+    if df.empty:
+        return {}
+    out = _loads(df.iloc[0]["results"]) or {}
+    out["_ts"] = str(df.iloc[0]["ts"])
+    out["_params"] = _loads(df.iloc[0]["params"]) or {}
+    return out
+
+
+@st.cache_data(ttl=600)
+def smart_money() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(per-fund position changes, per-security summary) from the specialist
+    13F filings - latest quarter vs each fund's own previous quarter."""
+    from bioterm.process import smart_money as sm
+
+    ch = sm.fund_changes()
+    return ch, sm.ticker_summary(ch)
+
+
+@st.cache_data(ttl=600)
+def inst_filers_df() -> pd.DataFrame:
+    return q("SELECT cik, name, short_name, last_period, last_filed FROM inst_filers "
+             "ORDER BY name")
+
+
+@st.cache_data(ttl=600)
+def short_flow() -> pd.DataFrame:
+    """Per ticker: FINRA short share of volume, 5-day vs 20-day."""
+    from bioterm.ingest.short_volume import short_ratio_trend
+
+    cut = (pd.Timestamp.today() - pd.Timedelta(days=45)).strftime("%Y-%m-%d")
+    return short_ratio_trend(q("SELECT ticker, date, short_volume, total_volume "
+                               "FROM short_volume WHERE date >= :c", {"c": cut}))
+
+
+@st.cache_data(ttl=600)
+def short_series(ticker: str) -> pd.DataFrame:
+    df = q("SELECT date, short_volume, short_exempt, total_volume FROM short_volume "
+           "WHERE ticker = :t ORDER BY date", {"t": ticker})
+    if not df.empty:
+        df["date"] = pd.to_datetime(df["date"])
+        df["ratio"] = df["short_volume"] / df["total_volume"].where(df["total_volume"] > 0)
+    return df
+
+
+@st.cache_data(ttl=600)
+def options_latest() -> pd.DataFrame:
+    """The most recent options snapshot per ticker."""
+    return q("SELECT o.* FROM options_snapshots o JOIN ("
+             "  SELECT ticker, MAX(date) d FROM options_snapshots GROUP BY ticker) m "
+             "ON o.ticker = m.ticker AND o.date = m.d")
+
+
+@st.cache_data(ttl=600)
+def options_history(ticker: str) -> pd.DataFrame:
+    df = q("SELECT * FROM options_snapshots WHERE ticker = :t ORDER BY date", {"t": ticker})
+    if not df.empty:
+        df["date"] = pd.to_datetime(df["date"])
+    return df
+
+
+@st.cache_data(ttl=120)
+def molecules_df() -> pd.DataFrame:
+    """Tracked molecules joined to their derived status row."""
+    df = q("SELECT m.id, m.ticker, m.name, m.aliases, m.indication, m.nct_ids, m.notes, "
+           "s.n_trials, s.n_active, s.top_phase, s.next_readout, s.n_news_30d, "
+           "s.news_tone_30d, s.papers_total, s.last_paper_date, s.discovered_aliases, "
+           "s.updated_at FROM molecules m LEFT JOIN molecule_status s ON s.molecule_id = m.id "
+           "ORDER BY m.ticker, m.name")
+    if df.empty:
+        return df
+    for c in ("aliases", "nct_ids", "discovered_aliases"):
+        df[c] = df[c].map(lambda s: _loads(s) if isinstance(s, str) else [])
+        df[c] = df[c].map(lambda v: v if isinstance(v, list) else [])
+    for c in ("next_readout", "last_paper_date"):
+        df[c] = pd.to_datetime(df[c], errors="coerce")
+    return df
+
+
+@st.cache_data(ttl=120)
+def molecule_trials_df(molecule_id: str | None = None) -> pd.DataFrame:
+    sql = "SELECT * FROM molecule_trials"
+    df = q(sql + " WHERE molecule_id = :m", {"m": molecule_id}) if molecule_id else q(sql)
+    for c in ("start_date", "primary_completion_date", "completion_date",
+              "last_update_post_date"):
+        if c in df:
+            df[c] = pd.to_datetime(df[c], errors="coerce")
+    return df
+
+
+@st.cache_data(ttl=120)
+def molecule_links_df(molecule_id: str) -> pd.DataFrame:
+    df = q("SELECT kind, ref_id, title, date, url, detail FROM molecule_links "
+           "WHERE molecule_id = :m ORDER BY date DESC", {"m": molecule_id})
+    if not df.empty:
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        df["detail_obj"] = df["detail"].map(lambda s: _loads(s) or {})
+    return df
+
+
 def _loads(s):
     try:
         return json.loads(s) if s else {}

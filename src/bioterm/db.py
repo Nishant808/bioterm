@@ -431,6 +431,7 @@ molecule_trials = Table(
     Column("ticker", String(16), index=True),
     Column("nct_id", String(24)),
     Column("sponsor", String(256)),
+    Column("sponsor_class", String(24)),   # CT.gov leadSponsor.class: INDUSTRY / OTHER / NIH ...
     Column("title", Text),
     Column("phase", String(32)),
     Column("status", String(48)),

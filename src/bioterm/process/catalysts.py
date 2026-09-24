@@ -282,7 +282,10 @@ def _from_clinical(horizon_end: date) -> list[dict]:
 
 def _from_molecule_trials(horizon_end: date) -> list[dict]:
     """Readouts of tracked molecules' trials run by *any* sponsor - a partnered
-    Phase 3 (Merck running Moderna's intismeran) is the holder's catalyst too."""
+    Phase 3 (Merck running Moderna's intismeran) is the holder's catalyst too -
+    but an investigator's Phase 4 at a university hospital is not."""
+    from ..ingest.molecules import material_trial
+
     try:
         df = read_sql("SELECT t.*, m.name AS molecule FROM molecule_trials t "
                       "JOIN molecules m ON m.id = t.molecule_id")
@@ -300,6 +303,8 @@ def _from_molecule_trials(horizon_end: date) -> list[dict]:
         if r["status"] not in ("RECRUITING", "ACTIVE_NOT_RECRUITING", "ENROLLING_BY_INVITATION",
                                "NOT_YET_RECRUITING", "COMPLETED"):
             continue
+        if not material_trial(r.get("source"), r.get("sponsor_class"), r["phase"]):
+            continue          # investigator-run / Phase 4 studies aren't the holder's catalyst
         phase = (r["phase"] or "").upper()
         ctype = ("phase3_readout" if "P3" in phase else "phase2_readout" if "P2" in phase
                  else "phase1_readout" if "P1" in phase else "trial_completion")

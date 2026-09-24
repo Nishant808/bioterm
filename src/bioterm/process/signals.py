@@ -260,11 +260,17 @@ def regime_of(feat: pd.DataFrame | None) -> str:
     return "neutral"
 
 
-def calibration(min_n: int = 50) -> dict[str, float]:
+def calibration(min_n: int = 50, floor_buy: float = 0.5, floor_sell: float = 0.75) -> dict[str, float]:
     """Per technical detector: a strength multiplier from its measured edge in
     the most recent event study (t-stat of 3-month excess return, in the
-    detector's own direction), clipped to [0.7, 1.3] - events overlap in time,
-    so the t-stats run hot and are only trusted gently. Empty until one exists."""
+    detector's own direction), capped at 1.3 - events overlap in time, so the
+    t-stats run hot and are only trusted gently. Empty until one exists.
+
+    The floor is asymmetric because the backtest universe is today's index
+    (survivorship bias): it flatters buy detectors and penalises sell detectors
+    (the losers that were delisted are missing). A buy detector that still
+    tests negative has genuinely failed and may be cut to ``floor_buy``; a sell
+    detector is never cut below ``floor_sell`` on this biased evidence."""
     df = _safe("SELECT results FROM backtests WHERE kind = 'events' ORDER BY ts DESC LIMIT 1")
     if df.empty:
         return {}
@@ -276,8 +282,10 @@ def calibration(min_n: int = 50) -> dict[str, float]:
     for code, s in by.items():
         n, t = s.get("n", 0), s.get("t_63")
         if n and n >= min_n and t is not None and not math.isnan(t):
-            directional = t if s.get("side") == "BUY" else -t
-            out[code] = float(min(1.3, max(0.7, 1.0 + 0.1 * directional)))
+            buy = s.get("side") == "BUY"
+            directional = t if buy else -t
+            out[code] = float(min(1.3, max(floor_buy if buy else floor_sell,
+                                           1.0 + 0.1 * directional)))
     return out
 
 
@@ -400,17 +408,24 @@ def event_detectors(tk: str, ctx: dict, feat: pd.DataFrame | None, det: dict,
     if sm is not None:
         buying = int(sm["new"]) + int(sm["added"])
         selling = int(sm["exited"]) + int(sm["trimmed"])
+        # a 13F is news the day it's filed and history a quarter later
+        filed = pd.to_datetime(sm.get("filed"), errors="coerce")
+        age = (pd.Timestamp(today) - filed).days if pd.notna(filed) else 90
+        fresh = min(1.0, max(0.35, 1.0 - max(0, age - 14) / 150))
         p = det.get("specialist_accumulation", {})
         if buying >= int(p.get("min_funds", 2)) and buying > selling:
             fire("specialist_accumulation", "BUY",
-                 float(p.get("strength", 0.5)) * min(1.3, 0.7 + 0.15 * buying + 0.1 * int(sm["new"])),
+                 fresh * float(p.get("strength", 0.5))
+                 * min(1.3, 0.7 + 0.15 * buying + 0.1 * int(sm["new"])),
                  f"{buying} specialist funds initiated or added ({', '.join(sm['funds_buying'][:4])})",
-                 {"new": int(sm["new"]), "added": int(sm["added"]), "period": str(sm["period"])[:10]},
+                 {"new": int(sm["new"]), "added": int(sm["added"]), "period": str(sm["period"])[:10],
+                  "filed_days_ago": age},
                  family="people")
         q = det.get("specialist_exit", {})
         if selling >= int(q.get("min_funds", 2)) and selling > buying:
             fire("specialist_exit", "SELL",
-                 float(q.get("strength", 0.45)) * min(1.3, 0.7 + 0.15 * selling + 0.1 * int(sm["exited"])),
+                 fresh * float(q.get("strength", 0.45))
+                 * min(1.3, 0.7 + 0.15 * selling + 0.1 * int(sm["exited"])),
                  f"{selling} specialist funds cut or exited ({', '.join(sm['funds_selling'][:4])})",
                  {"exited": int(sm["exited"]), "trimmed": int(sm["trimmed"])}, family="people")
 
@@ -641,7 +656,9 @@ def run() -> dict:
     regime = regime_of(feats.get(bench))
     uni_feats = {tk: f for tk, f in feats.items() if tk in set(tickers)}
     add_rs_rating(uni_feats)
-    calib = calibration()
+    calib = calibration(
+        floor_buy=float(cfg.get("signals", "calibration_floor_buy", default=0.5)),
+        floor_sell=float(cfg.get("signals", "calibration_floor_sell", default=0.75)))
     ctx = build_context(today, cfg)
 
     from ..store import get_watchlist

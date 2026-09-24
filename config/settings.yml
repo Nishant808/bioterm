@@ -113,7 +113,8 @@ alt_data:
   options_max_tickers: 90        # yfinance option chains per full run (watchlist + focus + catalysts)
   options_time_budget_s: 300
   institutions_time_budget_s: 240
-  openfigi_max_lookups: 60       # CUSIPs resolved via OpenFIGI per run when names don't match
+  openfigi_max_lookups: 300      # CUSIPs resolved via OpenFIGI per run when names don't match
+                                 # (10 per request, ~25 requests/min without a key; largest first)
   molecules_time_budget_s: 180
 
 nlp:
@@ -141,6 +142,8 @@ signals:
     risk_off: {buy: 0.80, sell: 1.15}
   conviction_weight: 0.5     # how much watchlist conviction scales buy strength
   calibrate: true            # scale detectors by their measured edge in the latest event study
+  calibration_floor_buy: 0.5    # a buy detector that tests negative can be cut this far
+  calibration_floor_sell: 0.75  # sell detectors: the backtest's survivorship bias penalises them
   detectors:
     breakout_52w:           {strength: 0.55, min_vol_z: 1.0}
     golden_cross:           {strength: 0.45}

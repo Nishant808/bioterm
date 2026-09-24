@@ -38,6 +38,7 @@ _FIELDS = ",".join(
         "protocolSection.conditionsModule.conditions",
         "protocolSection.armsInterventionsModule.interventions",
         "protocolSection.sponsorCollaboratorsModule.leadSponsor.name",
+        "protocolSection.sponsorCollaboratorsModule.leadSponsor.class",
     ]
 )
 

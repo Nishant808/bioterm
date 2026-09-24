@@ -1,9 +1,12 @@
-# Live-source smoke test on a throwaway SQLite DB (never touches DATABASE_URL):
-# runs every ingest + process job against the real endpoints over a small slice
-# of the universe and prints a data-quality report. Use it after changing an
-# ingest module - sources change formats without notice.
+# Live-source smoke test on a throwaway Postgres 16 (a service container - the
+# production DATABASE_URL is never used): runs every ingest + process job against
+# the real endpoints over a small slice of the universe, prints a data-quality
+# report, then renders every dashboard page against the result. Postgres, not
+# SQLite, because it's what Neon runs: it enforces VARCHAR lengths, types and
+# NULL ordering that SQLite lets slide. Use it after changing an ingest module -
+# sources change formats without notice.
 #
-# Secrets: SEC_UA (EDGAR requires a contact User-Agent). ~15-20 min.
+# Secrets: SEC_UA (EDGAR requires a contact User-Agent). ~8-12 min.
 
 name: probe
 
@@ -24,8 +27,18 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: probe
+          POSTGRES_DB: bioterm
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       BIOTERM_SEC_USER_AGENT: ${{ secrets.SEC_UA }}
+      DATABASE_URL: postgresql+psycopg://postgres:probe@localhost:5432/bioterm
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -71,16 +84,18 @@ jobs:
                   print(df.to_string(index=False) if not df.empty else "(empty)")
               except Exception as e:
                   print("ERR", e)
-          for t in ["securities", "prices", "fundamentals", "filings", "trials", "news", "news_nlp",
+          for t in ["securities", "prices", "fundamentals", "filings", "clinical_trials", "news", "news_nlp",
                     "catalysts", "insider_txns", "inst_filers", "inst_holdings", "cusip_map",
                     "short_volume", "options_snapshots", "molecules", "molecule_trials",
                     "molecule_links", "molecule_status", "signals", "signal_scores", "backtests"]:
               q(t, f"SELECT COUNT(*) AS n FROM {t}")
           q("job errors", "SELECT job, status, rows, substr(detail, 1, 600) AS detail FROM ingest_runs ORDER BY id")
           q("13F filers", "SELECT cik, name, last_period, last_filed FROM inst_filers")
-          q("13F by fund/period", "SELECT cik, period, COUNT(*) AS n, SUM(value)/1e6 AS value_m, SUM(ticker IS NOT NULL) AS mapped FROM inst_holdings GROUP BY cik, period ORDER BY cik, period")
+          q("13F by fund/period", "SELECT cik, period, COUNT(*) AS n, SUM(value)/1e6 AS value_m, COUNT(ticker) AS mapped FROM inst_holdings GROUP BY cik, period ORDER BY cik, period")
           q("cusip map methods", "SELECT method, COUNT(*) AS n FROM cusip_map GROUP BY method")
           q("unmapped top issuers", "SELECT issuer, cusip, SUM(value)/1e6 AS value_m FROM inst_holdings WHERE ticker IS NULL GROUP BY issuer, cusip ORDER BY value_m DESC LIMIT 15")
+          q("molecule aliases", "SELECT molecule_id, discovered_aliases FROM molecule_status")
+          q("trial sponsors", "SELECT molecule_id, nct_id, phase, sponsor_class, substr(sponsor, 1, 40) AS sponsor FROM molecule_trials ORDER BY molecule_id LIMIT 30")
           q("short volume latest", "SELECT * FROM short_volume ORDER BY date DESC, short_volume DESC LIMIT 8")
           q("short volume dates", "SELECT date, COUNT(*) AS n FROM short_volume GROUP BY date ORDER BY date DESC LIMIT 5")
           q("options", "SELECT ticker, expiry, days_to_expiry, atm_iv, implied_move, pc_volume_ratio, pc_oi_ratio, vol_oi_ratio FROM options_snapshots LIMIT 15")
@@ -105,4 +120,25 @@ jobs:
               print("\n===== smart money"); print(sm.ticker_summary(ch).head(20).to_string(index=False))
           except Exception as e:
               print("ERR", e)
+          EOF
+      - name: Dashboard pages on this database
+        if: always()
+        run: |
+          uv run python - <<'EOF'
+          import sys
+          from streamlit.testing.v1 import AppTest
+          pages = ["overview", "signals", "focus", "stock", "smart_money", "molecules",
+                   "backtest", "catalysts", "news", "watchlist", "compare", "alerts",
+                   "portfolio"]
+          bad = 0
+          for page in pages:
+              at = AppTest.from_file("dashboard/Home.py", default_timeout=120)
+              at.run()
+              if page != "overview":
+                  at.switch_page(f"app_pages/{page}.py")
+                  at.run()
+              errs = [e.value for e in at.exception]
+              bad += bool(errs)
+              print(f"{page:12s} {'FAIL ' + str(errs)[:600] if errs else 'ok'}")
+          sys.exit(1 if bad else 0)
           EOF

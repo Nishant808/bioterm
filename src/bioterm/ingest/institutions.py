@@ -87,8 +87,10 @@ def parse_infotable(xml_bytes: bytes, filed: date | None = None) -> list[dict]:
             value = float(_text(it, "value") or 0) * scale
         except ValueError:
             continue
-        cur = agg.setdefault(cusip, {"cusip": cusip, "issuer": _text(it, "nameOfIssuer"),
-                                     "title_class": _text(it, "titleOfClass"),
+        # Postgres enforces VARCHAR lengths (SQLite doesn't) - keep to the column sizes
+        cur = agg.setdefault(cusip, {"cusip": cusip,
+                                     "issuer": (_text(it, "nameOfIssuer") or "")[:200],
+                                     "title_class": (_text(it, "titleOfClass") or "")[:64],
                                      "shares": 0.0, "value": 0.0})
         cur["shares"] += shares
         cur["value"] += value
@@ -200,7 +202,9 @@ def openfigi_lookup(cusips: list[str]) -> dict[str, str | None]:
 
 def map_cusips(max_openfigi: int = 60) -> int:
     """Resolve unmapped CUSIPs in ``inst_holdings`` and stamp tickers onto them."""
-    hold = read_sql("SELECT DISTINCT cusip, issuer FROM inst_holdings")
+    # biggest positions first, so a capped OpenFIGI budget resolves what matters
+    hold = read_sql("SELECT cusip, MAX(issuer) AS issuer, COALESCE(SUM(value), 0) AS v "
+                    "FROM inst_holdings GROUP BY cusip ORDER BY v DESC")
     if hold.empty:
         return 0
     known = read_sql("SELECT cusip, ticker, method FROM cusip_map")

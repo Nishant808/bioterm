@@ -267,9 +267,9 @@ def save_molecule(m: dict[str, Any]) -> str:
             if re.fullmatch(r"NCT\d{8}", x.strip().upper())]
     now = _now()
     bulk_upsert(molecules, [{
-        "id": mid, "ticker": ticker, "name": name,
+        "id": mid, "ticker": ticker[:16], "name": name[:120],
         "aliases": json.dumps(_as_list(m.get("aliases"))),
-        "indication": as_text(m.get("indication")) or None,
+        "indication": as_text(m.get("indication"))[:160] or None,
         "nct_ids": json.dumps(ncts), "notes": as_text(m.get("notes")) or None,
         "created_at": now, "updated_at": now}],
         update_only=["ticker", "name", "aliases", "indication", "nct_ids", "notes",

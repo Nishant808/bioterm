@@ -38,10 +38,63 @@ def norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", str(s or "").lower())
 
 
+# Intervention "other names" on CT.gov are free text: besides real aliases
+# ("VX-548", "Journavx", "intismeran autogene") they carry arm labels
+# ("VX-548 Placebo"), doses ("suzetrigine 100mg") and descriptions ("Seasonal
+# influenza vaccine"). Only name-shaped strings may become search terms -
+# a generic phrase would link every flu-vaccine headline to the molecule.
+_ALIAS_STOP = re.compile(
+    r"\b(placebo|matched|matching|without|with|plus|and|or|formerly|previously|study|"
+    r"group|regimen|follow|patients?|participants?|vaccines?|therapy|therapies|treatment|"
+    r"dose|doses|dosing|arm|cohort|standard|care|vector|profile|oral|injection|infusion|"
+    r"tablets?|capsules?|combination|active|control|comparator|drug|product|solution|"
+    r"formulation|low|high|part|period|single|multiple|investigational|experimental|"
+    r"level|mg|mcg|kg|ml)\b|\d+\s*(mg|mcg|µg|ug|ml)\b", re.I)
+_AKA = re.compile(r"(?:formerly|previously|also)\s+(?:known\s+as|called)\s+(.+)", re.I)
+
+
+def clean_aliases(names, known: list[str] | None = None) -> list[str]:
+    """Name-shaped aliases only, de-duplicated against ``known`` (by norm)."""
+    seen = {norm(k) for k in (known or [])}
+    out: list[str] = []
+    for raw in names or []:
+        s = re.sub(r"[®™©]", "", str(raw or ""))
+        m = _AKA.search(s)
+        if m:
+            s = m.group(1)
+        parts = [s]
+        # "suzetrigine (Journavx)" / "X, Y" -> two candidates
+        for sep in (r"\(", r"\)", ",", ";", " / "):
+            parts = [q for p in parts for q in re.split(sep, p)]
+        for p in parts:
+            p = " ".join(p.split()).strip(" -.:")
+            if not p or len(p.split()) > 3 or _ALIAS_STOP.search(p) or len(norm(p)) < 4:
+                continue
+            if norm(p) not in seen:
+                seen.add(norm(p))
+                out.append(p)
+    return out
+
+
+def material_trial(source: str | None, sponsor_class: str | None, phase: str | None) -> bool:
+    """Could this trial's readout move the holder's stock? Pinned trials always;
+    otherwise industry-run (the company or a partner - not an investigator
+    study at a university hospital) and not a Phase 4 / non-phased study."""
+    if source == "pinned":
+        return True
+    ph = phase.upper() if isinstance(phase, str) else ""
+    if ph in ("", "NA", "P4"):
+        return False
+    # unknown class (NULL / NaN from older rows) is given the benefit of the doubt
+    cls = sponsor_class.upper() if isinstance(sponsor_class, str) and sponsor_class else "INDUSTRY"
+    return cls == "INDUSTRY"
+
+
 def terms_for(m: dict, discovered: list[str] | None = None) -> list[str]:
     """Search terms for a molecule: its name, aliases, discovered other names.
     Very short tokens are dropped (they match noise)."""
-    raw = [m["name"], *m.get("aliases", []), *(discovered or [])]
+    raw = [m["name"], *m.get("aliases", []),
+           *clean_aliases(discovered, [m["name"], *m.get("aliases", [])])]
     out = []
     for t in raw:
         t = str(t).strip()
@@ -139,11 +192,14 @@ def run(time_budget_s: float | None = None) -> dict:
             if not row:
                 continue
             row.update({"id": f"{m['id']}|{nct}"[:80], "molecule_id": m["id"],
-                        "source": src, "fetched_at": now})
+                        "source": src, "fetched_at": now,
+                        "sponsor": (row.get("sponsor") or "")[:256],
+                        "sponsor_class": st.get("protocolSection", {})
+                        .get("sponsorCollaboratorsModule", {}).get("leadSponsor", {})
+                        .get("class")})
             trial_rows.append(row)
 
-        disc = [d for d in dict.fromkeys(discovered)
-                if norm(d) not in {norm(t) for t in [m["name"], *m.get("aliases", [])]}]
+        disc = clean_aliases(dict.fromkeys(discovered), [m["name"], *m.get("aliases", [])])
         try:
             total, papers = _papers(terms_for(m, disc)) if terms else (0, [])
         except Exception as exc:  # noqa: BLE001

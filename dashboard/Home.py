@@ -59,18 +59,31 @@ def _page(path: str, title: str, icon: str, url_path: str | None = None,
                    url_path=url_path, default=default)
 
 
+# Pages under "" sit directly in the top bar; each named section is a dropdown.
 nav = st.navigation(
-    [
-        _page("overview.py", "Overview", "space_dashboard", default=True),
-        _page("focus.py", "Focus list", "leaderboard", "Stocks_in_Focus"),
-        _page("stock.py", "Stock detail", "query_stats", "Stock_Detail"),
-        _page("catalysts.py", "Catalysts", "event_upcoming", "Catalyst_Calendar"),
-        _page("news.py", "News", "newspaper", "News_Firehose"),
-        _page("watchlist.py", "Watchlist", "bookmark_star", "Watchlist"),
-        _page("compare.py", "Compare", "compare_arrows", "Compare"),
-        _page("alerts.py", "Alerts", "notifications_active", "Alerts"),
-        _page("portfolio.py", "Paper trading", "account_balance_wallet", "Portfolio"),
-    ],
+    {
+        "": [
+            _page("overview.py", "Overview", "space_dashboard", default=True),
+            _page("signals.py", "Signals", "swap_vert", "Signals"),
+            _page("stock.py", "Stock detail", "query_stats", "Stock_Detail"),
+        ],
+        "Intelligence": [
+            _page("focus.py", "Focus list", "leaderboard", "Stocks_in_Focus"),
+            _page("smart_money.py", "Smart money & flow", "account_balance", "Smart_Money"),
+            _page("molecules.py", "Molecules", "science", "Molecules"),
+            _page("backtest.py", "Backtest", "history", "Backtest"),
+        ],
+        "Markets": [
+            _page("catalysts.py", "Catalysts", "event_upcoming", "Catalyst_Calendar"),
+            _page("news.py", "News", "newspaper", "News_Firehose"),
+            _page("compare.py", "Compare", "compare_arrows", "Compare"),
+        ],
+        "Workspace": [
+            _page("watchlist.py", "Watchlist", "bookmark_star", "Watchlist"),
+            _page("alerts.py", "Alerts", "notifications_active", "Alerts"),
+            _page("portfolio.py", "Paper trading", "account_balance_wallet", "Portfolio"),
+        ],
+    },
     position="top",
 )
 
