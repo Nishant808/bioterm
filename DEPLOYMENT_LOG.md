@@ -629,9 +629,9 @@ work is structure, presentation and correctness of what's shown.
   `scripts/encode.sh` produces the Twitter file; `scripts/contact.py` builds review sheets.
   Renders are deterministic.
 - **Outputs** (`video/output/`, git-ignored): `bioterm_30s_master.mp4` (1920×1080, 30 fps,
-  H.264 CRF 12, AAC 320k), `bioterm_30s_twitter.mp4` (H.264 High@4.2, CRF 17 capped at
-  16 Mbps, AAC 192k, faststart), and `bioterm_30s_vertical.mp4` (1080×1920, same
-  composition).
+  H.264 CRF 12, AAC 320k), `bioterm_30s_twitter.mp4` (H.264 High@4.2, CRF 14 with tune
+  animation, capped at 20 Mbps, AAC 192k, faststart, 17 MB), and `bioterm_30s_vertical.mp4` /
+  `_vertical_master.mp4` (1080×1920, same composition). Audio is −14.2 LUFS with a −2.6 dBTP peak.
 - **Render env notes:** Remotion uses `/opt/pw-browsers/chromium_headless_shell-1194`
   (`REMOTION_CHROME` overrides it). There is no system ffmpeg; `pip install imageio-ffmpeg`
   supplies a static binary for `encode.sh`. A full 900-frame 1080p render takes about

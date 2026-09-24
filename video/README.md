@@ -40,8 +40,9 @@ node scripts/build-data.mjs            # csv -> src/data/mrna.generated.ts
 python3 audio/generate.py              # soundtrack.wav
 node scripts/render.mjs stills         # review frames -> output/stills (python3 scripts/contact.py to tile)
 node scripts/render.mjs master         # output/bioterm_30s_master.mp4   (1920x1080, 30fps, H.264 CRF 12, AAC 320k)
-bash scripts/encode.sh                 # output/bioterm_30s_twitter.mp4  (H.264 High, ~12 Mbps, AAC 192k, faststart)
+bash scripts/encode.sh                 # output/bioterm_30s_twitter.mp4  (H.264 High, CRF 14 ≤20 Mbps, AAC 192k, faststart)
 node scripts/render.mjs vertical       # output/bioterm_30s_vertical_master.mp4 (1080x1920)
+bash scripts/encode.sh output/bioterm_30s_vertical_master.mp4 output/bioterm_30s_vertical.mp4
 npx remotion studio src/index.ts       # interactive timeline
 ```
 
