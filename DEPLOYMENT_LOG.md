@@ -574,3 +574,34 @@ work is structure, presentation and correctness of what's shown.
 - Local env: the venv's console scripts still pointed at `~/Desktop/cld` after the
   repo move (`uv run pytest` → "Failed to spawn") → fixed with
   `uv sync --extra dev --reinstall`.
+
+### 2026-09-24 — session 7 follow-up: verified in production + fewer DB round trips
+
+- **Two days live on `f4426e6`:** all 8 scheduled ingest runs passed (6 fast, 2
+  full). The Postgres alerts step works (162 firing, 57 new; the Core-select
+  score-move path fires). FierceBiotech headlines ingested since then are
+  stored as clean text.
+- **Cold loads were mostly network round trips.** Each `read_sql` cost four trips
+  from Streamlit Cloud to Neon in Frankfurt: the pool pre-ping, a `BEGIN` (psycopg
+  opens a transaction before the first statement), the `SELECT`, and the pool's
+  `ROLLBACK` on return. `read_sql` now runs in autocommit, which leaves the ping
+  and the SELECT. The pool restores the default isolation on return, so writes
+  keep their transactions; `tests/test_db.py` checks that. The Alerts rules
+  picker also reads its tag options from a cached `SELECT DISTINCT event_tags`
+  instead of the newest 4,000 full news rows. `requests>=2.32` forced the rebuild.
+- **Measured** as full page loads of `/~/+/<Page>` (about 2 s is page bootstrap;
+  in-app navigation skips it), before → after:
+
+  | page | cold | warm |
+  |---|---|---|
+  | Alerts | 9.5 → 5.3 s | 3.2 → 2.5 s (it was ~6.5 s on every visit before session 7's cache) |
+  | Stock detail | 9.0 → 7.3 s (VRTX; ABBV 6.9 s) | 4.0 → 3.2 s |
+  | first visit: Focus · News · Compare · Paper trading | 6.4 · 4.9 · 5.5 · 6.2 s → 3.2 · 2.5 · 3.7 · 3.6 s | |
+
+- **Not done, on purpose:** dropping `pool_pre_ping` would save one more trip per
+  read, but it's what survives Neon's idle auto-suspend. Removing it trades
+  reliability for about a second on a cold Stock detail load.
+- **QA tip:** with Claude's browser pane hidden, `requestAnimationFrame` is paused,
+  so Streamlit's top nav never lays out and has no links. Load `/~/+/<Page>` URLs
+  directly instead of clicking the nav.
+- **116 tests passing.**
