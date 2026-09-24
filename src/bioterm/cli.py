@@ -4,6 +4,9 @@
     bioterm universe [--force]      build/refresh the ticker universe
     bioterm ingest [--once] [--limit N] [--only prices,news,...]
     bioterm score                   recompute catalysts + Focus Score
+    bioterm signals                 recompute BUY/SELL signals, print the calls
+    bioterm backtest                event study + factor backtest + track record
+    bioterm nlp                     FinBERT headline tone (nlp extra)
     bioterm status                  show recent ingest runs + row counts
     bioterm serve                   launch the Streamlit dashboard
     bioterm scheduler               run the always-on background scheduler
@@ -50,7 +53,9 @@ def ingest(
     once: bool = typer.Option(True, "--once/--no-once", help="run a single full refresh"),
     limit: int = typer.Option(0, help="cap universe size (0 = all)"),
     only: str = typer.Option("", help="comma list: prices,technicals,edgar,fundamentals,"
-                                      "clinical,fda,insiders,news,sentiment,catalysts,score"),
+                                      "clinical,fda,insiders,shortvol,institutions,molecules,"
+                                      "options,news,sentiment,finbert,catalysts,mollinks,"
+                                      "score,signals,backtest"),
     preset: str = typer.Option("", help="'fast' (news+score, for a frequent cron) or "
                                         "'full' (everything, for a 2-3x/day cron)"),
 ) -> None:
@@ -61,7 +66,7 @@ def ingest(
     lim = limit or None
 
     if preset == "fast":
-        only = "news,sentiment,catalysts,score"
+        only = "news,sentiment,catalysts,mollinks,score,signals"
     elif preset == "full":
         only = ""  # full refresh path below
 
@@ -80,13 +85,23 @@ def ingest(
             "clinical": lambda: pipeline.run_job("clinical", _m("ingest.clinical").run, tickers),
             "fda": lambda: pipeline.run_job("fda", _m("ingest.fda").run, tickers),
             "insiders": lambda: pipeline.run_job("insiders", _m("ingest.insiders").run),
+            "shortvol": lambda: pipeline.run_job("short_volume", _m("ingest.short_volume").run, tickers),
+            "institutions": lambda: pipeline.run_job("institutions", _m("ingest.institutions").run),
+            "molecules": lambda: pipeline.run_job("molecule_trials", _m("ingest.molecules").run),
+            "options": lambda: pipeline.run_job("options", _m("ingest.options").run),
             "news": lambda: pipeline.run_job("news", _m("ingest.news").run, tickers),
             "sentiment": lambda: pipeline.run_job("sentiment", _m("process.sentiment").run, True),
+            "finbert": lambda: pipeline.run_job("finbert", _m("process.finbert").run),
             "catalysts": lambda: pipeline.run_job("catalysts", _m("process.catalysts").run),
+            "mollinks": lambda: pipeline.run_job("molecules", _m("process.molecules").run),
             "score": lambda: pipeline.run_job("score", _m("process.score").run),
+            "signals": lambda: pipeline.run_job("signals", _m("process.signals").run),
+            "backtest": lambda: pipeline.run_job("backtest", _m("process.backtest").run),
         }
         for name in ["prices", "technicals", "edgar", "fundamentals", "clinical",
-                     "fda", "insiders", "news", "sentiment", "catalysts", "score"]:
+                     "fda", "insiders", "shortvol", "institutions", "molecules", "options",
+                     "news", "sentiment", "finbert", "catalysts", "mollinks", "score",
+                     "signals", "backtest"]:
             if name in wanted:
                 console.rule(name)
                 console.print(jobmap[name]())
@@ -113,6 +128,41 @@ def score() -> None:
 
 
 @app.command()
+def signals() -> None:
+    """Recompute the BUY/SELL signal engine and print today's strongest calls."""
+    from .db import read_sql
+    from .process import signals as sig
+
+    console.print_json(data=sig.run())
+    df = read_sql("SELECT ticker, label, net, bull, bear, n_buy, n_sell FROM signal_scores "
+                  "WHERE asof = (SELECT MAX(asof) FROM signal_scores) AND label <> 'NEUTRAL' "
+                  "ORDER BY net DESC")
+    console.print(df.to_string(index=False) if not df.empty else "no non-neutral calls")
+
+
+@app.command()
+def backtest() -> None:
+    """Run the event study, factor backtest and live track record."""
+    from .process import backtest as bt
+
+    console.print_json(data=bt.run())
+    ev = bt.latest("events").get("by_code", {})
+    rows = sorted(ev.items(), key=lambda kv: -(abs(kv[1].get("t_63") or 0)))
+    for code, s in rows[:15]:
+        console.print(f"  {code:28s} {s['side']:4s} n={s['n']:5d}  3M excess "
+                      f"{(s.get('mean_63') or 0) * 100:+6.2f}%  hit {(s.get('hit_63') or 0):.0%}"
+                      f"  t={s.get('t_63')}")
+
+
+@app.command()
+def nlp(max_rows: int = typer.Option(0, help="cap headlines scored this run (0 = settings)")) -> None:
+    """Score unscored headlines with FinBERT (needs the nlp extra; otherwise a no-op)."""
+    from .process import finbert
+
+    console.print_json(data=finbert.run(max_rows or None))
+
+
+@app.command()
 def alerts(
     deliver: bool = typer.Option(True, "--deliver/--no-deliver",
                                  help="push new alerts (Telegram, if configured)"),
@@ -124,7 +174,8 @@ def alerts(
     console.print_json(data=out)
     firing = alerts_mod.evaluate()
     for a in firing[:20]:
-        icon = {"score move": "📈", "catalyst soon": "🗓", "headline": "📰"}.get(a["kind"], "•")
+        icon = {"score move": "📈", "catalyst soon": "🗓", "headline": "📰",
+                "signal": "🚦"}.get(a["kind"], "•")
         console.print(f"{icon} [bold]{a['ticker']}[/bold] {a['kind']}: {a['detail']}")
 
 
@@ -175,12 +226,14 @@ def import_sqlite(
 @app.command()
 def status() -> None:
     """Show recent ingest runs and table row counts."""
-    from .db import (catalysts, clinical_trials, fda_events, filings, news,
-                     prices, scores, securities, table_count, technicals)
+    from .db import (catalysts, clinical_trials, fda_events, filings, inst_holdings,
+                     molecule_trials, news, options_snapshots, prices, scores, securities,
+                     short_volume, signal_scores, signals, table_count, technicals)
     from . import pipeline
 
     for tbl in (securities, prices, technicals, news, clinical_trials, fda_events,
-                filings, catalysts, scores):
+                filings, catalysts, scores, inst_holdings, short_volume, options_snapshots,
+                molecule_trials, signals, signal_scores):
         try:
             console.print(f"  {tbl.name:18s} {table_count(tbl):>8d} rows")
         except Exception as exc:  # noqa: BLE001

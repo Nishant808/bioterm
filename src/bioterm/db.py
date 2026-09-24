@@ -94,6 +94,11 @@ fundamentals = Table(
     Column("next_earnings_date", Date),
     Column("sources", String(128)),
     Column("updated_at", DateTime),
+    # added in session 9 (auto-migrated onto existing databases by migrate())
+    Column("short_ratio", Float),            # days to cover
+    Column("held_pct_institutions", Float),
+    Column("held_pct_insiders", Float),
+    Column("beta", Float),
 )
 
 clinical_trials = Table(
@@ -318,6 +323,200 @@ filing_risk_flags = Table(
     Column("checked_at", DateTime),
 )
 
+# ------------------------------------------------------------------ smart money (13F)
+# Quarterly 13F-HR holdings of a curated set of biotech specialist funds
+# (config/institutions.yml). Equity positions only, aggregated per CUSIP.
+inst_filers = Table(
+    "inst_filers", metadata,
+    Column("cik", String(16), primary_key=True),
+    Column("name", String(160)),
+    Column("short_name", String(64)),
+    Column("last_period", Date),
+    Column("last_filed", Date),
+    Column("checked_at", DateTime),
+)
+
+inst_holdings = Table(
+    "inst_holdings", metadata,
+    Column("id", String(64), primary_key=True),      # cik|period|cusip
+    Column("cik", String(16), index=True),
+    Column("period", Date, index=True),               # quarter-end the 13F reports on
+    Column("filed_date", Date),
+    Column("accession", String(32)),
+    Column("cusip", String(12), index=True),
+    Column("issuer", String(200)),
+    Column("title_class", String(64)),
+    Column("ticker", String(16), index=True),         # matched universe ticker, if any
+    Column("shares", Float),
+    Column("value", Float),                           # USD
+    Column("fetched_at", DateTime),
+)
+
+# CUSIP -> ticker resolutions (name match or OpenFIGI), cached across runs
+cusip_map = Table(
+    "cusip_map", metadata,
+    Column("cusip", String(12), primary_key=True),
+    Column("ticker", String(16)),
+    Column("issuer", String(200)),
+    Column("method", String(16)),                     # name / openfigi / none
+    Column("updated_at", DateTime),
+)
+
+# ------------------------------------------------------------------ market microstructure
+# FINRA Reg SHO daily short-sale volume (consolidated NMS file)
+short_volume = Table(
+    "short_volume", metadata,
+    Column("ticker", String(16), primary_key=True),
+    Column("date", Date, primary_key=True),
+    Column("short_volume", Float),
+    Column("short_exempt", Float),
+    Column("total_volume", Float),
+)
+
+# One options snapshot per ticker per day (yfinance chains, front + next expiry)
+options_snapshots = Table(
+    "options_snapshots", metadata,
+    Column("ticker", String(16), primary_key=True),
+    Column("date", Date, primary_key=True),
+    Column("spot", Float),
+    Column("expiry", Date),
+    Column("days_to_expiry", Integer),
+    Column("atm_iv", Float),
+    Column("iv_back", Float),
+    Column("implied_move", Float),        # ATM straddle / spot, front expiry
+    Column("call_volume", Float),
+    Column("put_volume", Float),
+    Column("call_oi", Float),
+    Column("put_oi", Float),
+    Column("pc_volume_ratio", Float),
+    Column("pc_oi_ratio", Float),
+    Column("vol_oi_ratio", Float),
+    Column("fetched_at", DateTime),
+)
+
+# ------------------------------------------------------------------ NLP provenance
+# FinBERT scores per headline. news.sentiment holds the best available tone
+# (FinBERT once scored, VADER before); this table records which model said what.
+news_nlp = Table(
+    "news_nlp", metadata,
+    Column("id", String(40), primary_key=True),        # news.id
+    Column("vader", Float),
+    Column("finbert", Float),                          # p(positive) - p(negative)
+    Column("label", String(12)),
+    Column("confidence", Float),
+    Column("model", String(64)),
+    Column("scored_at", DateTime),
+)
+
+# ------------------------------------------------------------------ per-molecule tracking
+molecules = Table(
+    "molecules", metadata,
+    Column("id", String(48), primary_key=True),        # slug of ticker + name
+    Column("ticker", String(16), index=True),
+    Column("name", String(120)),
+    Column("aliases", Text),                           # JSON list
+    Column("indication", String(160)),
+    Column("nct_ids", Text),                           # JSON list pinned by the user
+    Column("notes", Text),
+    Column("created_at", DateTime),
+    Column("updated_at", DateTime),
+)
+
+# Trials found for a molecule across every sponsor (partners included) -
+# kept apart from clinical_trials, which is keyed on the lead sponsor.
+molecule_trials = Table(
+    "molecule_trials", metadata,
+    Column("id", String(80), primary_key=True),        # molecule_id|nct_id
+    Column("molecule_id", String(48), index=True),
+    Column("ticker", String(16), index=True),
+    Column("nct_id", String(24)),
+    Column("sponsor", String(256)),
+    Column("title", Text),
+    Column("phase", String(32)),
+    Column("status", String(48)),
+    Column("start_date", Date),
+    Column("primary_completion_date", Date),
+    Column("completion_date", Date),
+    Column("conditions", Text),
+    Column("interventions", Text),
+    Column("enrollment", Float),
+    Column("last_update_post_date", Date),
+    Column("url", String(256)),
+    Column("source", String(16)),                      # pinned / search
+    Column("fetched_at", DateTime),
+)
+
+molecule_links = Table(
+    "molecule_links", metadata,
+    Column("id", String(64), primary_key=True),
+    Column("molecule_id", String(48), index=True),
+    Column("kind", String(16)),                        # news / catalyst / paper
+    Column("ref_id", String(64)),
+    Column("title", Text),
+    Column("date", Date),
+    Column("url", String(512)),
+    Column("detail", Text),
+    Column("created_at", DateTime),
+)
+
+molecule_status = Table(
+    "molecule_status", metadata,
+    Column("molecule_id", String(48), primary_key=True),
+    Column("ticker", String(16), index=True),
+    Column("n_trials", Integer),
+    Column("n_active", Integer),
+    Column("top_phase", String(16)),
+    Column("next_readout", Date),
+    Column("n_news_30d", Integer),
+    Column("news_tone_30d", Float),
+    Column("papers_total", Integer),
+    Column("last_paper_date", Date),
+    Column("discovered_aliases", Text),                # JSON: otherNames seen on trial records
+    Column("updated_at", DateTime),
+)
+
+# ------------------------------------------------------------------ signal engine
+# Every detector that fired, per ticker per day - kept as history so the
+# signals' own forward returns can be measured (the live track record).
+signals = Table(
+    "signals", metadata,
+    Column("id", String(48), primary_key=True),        # sha1(ticker|code|asof)
+    Column("asof", Date, index=True),
+    Column("ticker", String(16), index=True),
+    Column("side", String(4)),                         # BUY / SELL
+    Column("code", String(40)),
+    Column("strength", Float),                         # 0..1 after calibration
+    Column("title", Text),
+    Column("detail", Text),                            # JSON evidence
+    Column("ts", DateTime),
+)
+
+signal_scores = Table(
+    "signal_scores", metadata,
+    Column("ticker", String(16), primary_key=True),
+    Column("asof", Date, primary_key=True),
+    Column("bull", Float),
+    Column("bear", Float),
+    Column("net", Float),                              # bull - bear, -1..1
+    Column("label", String(16)),                       # STRONG BUY ... STRONG SELL
+    Column("n_buy", Integer),
+    Column("n_sell", Integer),
+    Column("close", Float),                            # price when the call was made
+    Column("regime", String(16)),
+    Column("top", Text),                               # JSON: strongest detectors
+    Column("ts", DateTime),
+)
+
+# Backtest / event-study / track-record results (JSON), newest per kind wins
+backtests = Table(
+    "backtests", metadata,
+    Column("id", String(48), primary_key=True),        # kind|YYYY-MM-DD
+    Column("kind", String(24), index=True),
+    Column("ts", DateTime, index=True),
+    Column("params", Text),
+    Column("results", Text),
+)
+
 
 _ENGINE: Engine | None = None
 
@@ -341,9 +540,44 @@ def get_engine() -> Engine:
     return _ENGINE
 
 
+def migrate(engine: Engine | None = None) -> list[str]:
+    """Bring an existing database up to the current schema, additively.
+
+    ``create_all`` makes missing *tables* but never touches an existing one, so a
+    column added to a table here (e.g. fundamentals.short_ratio) would be absent on
+    the live Postgres and every write naming it would fail. This adds any missing
+    column as nullable - never drops, renames or retypes anything, so it is safe
+    to run on every start (the dashboard and each Actions run both call init_db).
+    Returns the "table.column" names it added.
+    """
+    from sqlalchemy import text
+
+    engine = engine or get_engine()
+    insp = inspect(engine)
+    existing_tables = set(insp.get_table_names())
+    added: list[str] = []
+    for table in metadata.sorted_tables:
+        if table.name not in existing_tables:
+            continue
+        have = {c["name"] for c in insp.get_columns(table.name)}
+        for col in table.columns:
+            if col.name in have or col.primary_key:
+                continue
+            ddl = col.type.compile(dialect=engine.dialect)
+            with engine.begin() as conn:
+                conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN "{col.name}" {ddl}'))
+            added.append(f"{table.name}.{col.name}")
+    if added:
+        import logging
+
+        logging.getLogger("bioterm.db").info("migrated: added %s", ", ".join(added))
+    return added
+
+
 def init_db(seed: bool = True) -> list[str]:
     engine = get_engine()
     metadata.create_all(engine)
+    migrate(engine)
     if seed:
         try:
             from .store import seed_from_yaml

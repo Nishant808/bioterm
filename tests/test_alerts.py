@@ -42,3 +42,26 @@ def test_score_moves_compare_against_the_previous_run():
              if a["kind"] == "score move"]
     assert len(fired) == 1
     assert fired[0]["detail"].startswith("Focus +0.080")
+
+
+def test_signal_label_transitions_alert_once():
+    import json
+    from datetime import date, timedelta
+
+    from bioterm import alerts
+    from bioterm.db import bulk_upsert, init_db, signal_scores
+
+    init_db()
+    d1, d2 = date.today() - timedelta(days=1), date.today()
+    top = json.dumps([{"title": "Phase 3 readout in 40 days", "side": "BUY"}])
+    bulk_upsert(signal_scores, [
+        {"ticker": "AAA", "asof": d1, "label": "NEUTRAL", "net": 0.1, "top": "[]"},
+        {"ticker": "AAA", "asof": d2, "label": "STRONG BUY", "net": 0.62, "top": top},
+        {"ticker": "BBB", "asof": d1, "label": "SELL", "net": -0.3, "top": "[]"},
+        {"ticker": "BBB", "asof": d2, "label": "SELL", "net": -0.32, "top": "[]"},
+    ])
+    sig = [a for a in alerts.evaluate() if a["kind"] == "signal"]
+    assert [a["ticker"] for a in sig] == ["AAA"]
+    assert sig[0]["detail"].startswith("NEUTRAL → STRONG BUY")
+    assert alerts.run(deliver=False)["new"] >= 1
+    assert alerts.run(deliver=False)["new"] == 0

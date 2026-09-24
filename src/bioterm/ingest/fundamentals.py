@@ -35,6 +35,10 @@ def _yf_stats(ticker: str) -> dict:
         out["shares_out"] = out.get("shares_out") or _num(info.get("sharesOutstanding"))
         out["float_shares"] = _num(info.get("floatShares"))
         out["short_percent_float"] = _num(info.get("shortPercentOfFloat"))
+        out["short_ratio"] = _num(info.get("shortRatio"))
+        out["held_pct_institutions"] = _num(info.get("heldPercentInstitutions"))
+        out["held_pct_insiders"] = _num(info.get("heldPercentInsiders"))
+        out["beta"] = _num(info.get("beta"))
         # yfinance sometimes carries these directly
         out["cash_yf"] = _num(info.get("totalCash"))
     except Exception:  # noqa: BLE001
@@ -88,6 +92,10 @@ def run(tickers: list[str] | None = None) -> dict:
                 "shares_out": stats.get("shares_out"),
                 "float_shares": stats.get("float_shares"),
                 "short_percent_float": stats.get("short_percent_float"),
+                "short_ratio": stats.get("short_ratio"),
+                "held_pct_institutions": stats.get("held_pct_institutions"),
+                "held_pct_insiders": stats.get("held_pct_insiders"),
+                "beta": stats.get("beta"),
                 "cash": cash,
                 "rd_expense_ttm": facts.get("rd_expense_ttm"),
                 "net_income_ttm": ni,

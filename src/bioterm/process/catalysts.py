@@ -280,6 +280,39 @@ def _from_clinical(horizon_end: date) -> list[dict]:
     return out
 
 
+def _from_molecule_trials(horizon_end: date) -> list[dict]:
+    """Readouts of tracked molecules' trials run by *any* sponsor - a partnered
+    Phase 3 (Merck running Moderna's intismeran) is the holder's catalyst too."""
+    try:
+        df = read_sql("SELECT t.*, m.name AS molecule FROM molecule_trials t "
+                      "JOIN molecules m ON m.id = t.molecule_id")
+    except Exception:  # noqa: BLE001 - tables appear with the first molecule run
+        return []
+    if df.empty:
+        return []
+    today = date.today()
+    grace = today - relativedelta(days=75)
+    out = []
+    for _, r in df.iterrows():
+        pcd = pd.to_datetime(r["primary_completion_date"], errors="coerce")
+        if pd.isna(pcd) or not (grace <= pcd.date() <= horizon_end + relativedelta(months=3)):
+            continue
+        if r["status"] not in ("RECRUITING", "ACTIVE_NOT_RECRUITING", "ENROLLING_BY_INVITATION",
+                               "NOT_YET_RECRUITING", "COMPLETED"):
+            continue
+        phase = (r["phase"] or "").upper()
+        ctype = ("phase3_readout" if "P3" in phase else "phase2_readout" if "P2" in phase
+                 else "phase1_readout" if "P1" in phase else "trial_completion")
+        out.append({
+            "ticker": r["ticker"], "type": ctype,
+            "title": f"{r['molecule']} · {phase or 'Trial'} primary completion "
+                     f"({r['sponsor']}): {(r['title'] or '')[:100]}",
+            "date": pcd.date(),
+            "confidence": "medium" if r["status"] != "COMPLETED" else "high",
+            "source": "molecule-tracking", "url": r["url"]})
+    return out
+
+
 def _from_news(horizon_end: date) -> list[dict]:
     df = read_sql("SELECT ticker, title, summary, url, published FROM news")
     if df.empty:
@@ -360,6 +393,7 @@ def run() -> dict:
 
     raw = (
         _from_clinical(horizon_end)
+        + _from_molecule_trials(horizon_end)
         + _from_news(horizon_end)
         + _from_earnings()
         + _from_manual()

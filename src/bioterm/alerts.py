@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 import pandas as pd
 from sqlalchemy import select
 
-from .db import alerts_fired, bulk_upsert, read_sql, score_snapshots
+from .db import alerts_fired, bulk_upsert, read_sql, score_snapshots, signal_scores
 from .httpx_util import session
 from .store import get_meta, get_watchlist
 from .util import strip_markup
@@ -34,7 +34,11 @@ DEFAULT_RULES = {
                    "breakthrough therapy", "priority review", "accelerated approval"],
     "watchlist_only": False,
     "news_lookback_days": 3,
+    # signal-engine label changes that alert (entering any of these from another label)
+    "signal_labels": ["STRONG BUY", "BUY", "SELL", "STRONG SELL"],
 }
+
+SIGNAL_RANK = {"STRONG SELL": -2, "SELL": -1, "NEUTRAL": 0, "BUY": 1, "STRONG BUY": 2}
 
 
 def get_rules() -> dict:
@@ -110,7 +114,46 @@ def evaluate(rules: dict | None = None) -> list[dict]:
                         "detail": f"{', '.join(sorted(hit))} — {strip_markup(n['title'])[:110]}",
                         "weight": abs(float(n["event_score"] or 0))})
 
+    # --- signal-engine label transitions (latest run vs the previous day's) ---
+    out.extend(_signal_transitions(rules, wl if wl_only else None))
+
     out.sort(key=lambda a: a["weight"], reverse=True)
+    return out
+
+
+def _signal_transitions(rules: dict, only: set[str] | None) -> list[dict]:
+    try:
+        days = read_sql("SELECT DISTINCT asof FROM signal_scores ORDER BY asof DESC LIMIT 2")
+    except Exception:  # noqa: BLE001 - table appears with the first signals run
+        return []
+    if days.empty:
+        return []
+    import json
+
+    want = set(rules.get("signal_labels") or [])
+    cur = read_sql(select(signal_scores.c.ticker, signal_scores.c.label, signal_scores.c.net,
+                          signal_scores.c.top)
+                   .where(signal_scores.c.asof == pd.to_datetime(days.iloc[0]["asof"]).date()))
+    prev = pd.DataFrame(columns=["ticker", "label"])
+    if len(days) > 1:
+        prev = read_sql(select(signal_scores.c.ticker, signal_scores.c.label)
+                        .where(signal_scores.c.asof == pd.to_datetime(days.iloc[1]["asof"]).date()))
+    before = dict(zip(prev["ticker"], prev["label"]))
+    out = []
+    for _, r in cur.iterrows():
+        if only is not None and r["ticker"] not in only:
+            continue
+        was = before.get(r["ticker"], "NEUTRAL")
+        if r["label"] not in want or r["label"] == was:
+            continue
+        try:
+            top = json.loads(r["top"] or "[]")
+        except (TypeError, ValueError):
+            top = []
+        why = top[0]["title"] if top else ""
+        out.append({"kind": "signal", "ticker": r["ticker"],
+                    "detail": f"{was} → {r['label']} (net {float(r['net']):+.2f}) — {strip_markup(why)[:100]}",
+                    "weight": abs(float(r["net"])) + 0.5 * abs(SIGNAL_RANK.get(r["label"], 0))})
     return out
 
 
@@ -160,7 +203,8 @@ def run(deliver: bool = True, max_deliver: int = 12) -> dict:
         top = fresh[:max_deliver]
         lines = [f"<b>BioTerm — {len(fresh)} new alert(s)</b>"]
         for a in top:
-            icon = {"score move": "📈", "catalyst soon": "🗓", "headline": "📰"}.get(a["kind"], "•")
+            icon = {"score move": "📈", "catalyst soon": "🗓", "headline": "📰",
+                    "signal": "🚦"}.get(a["kind"], "•")
             # parse_mode=HTML: a raw "&" or "<" in a title ("R&D") is a hard error
             lines.append(f"{icon} <b>{html.escape(str(a['ticker']))}</b> — "
                          f"{html.escape(str(a['detail']))}")

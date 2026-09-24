@@ -75,3 +75,21 @@ def test_full_pipeline_recompute_no_data():
     out = pipeline.recompute()
     assert out["catalysts"].get("error") is None
     assert out["score"].get("error") is None
+
+
+def test_price_plan_backfills_new_names_and_tops_up_current_ones():
+    from datetime import date, timedelta
+
+    from bioterm.db import bulk_upsert, init_db, prices
+    from bioterm.ingest import prices as px
+
+    init_db()
+    today = date.today()
+    bulk_upsert(prices, [
+        {"ticker": "CUR", "date": today - timedelta(days=2), "close": 1.0},
+        {"ticker": "OLD", "date": today - timedelta(days=40), "close": 1.0},
+    ])
+    plan = px.plan(["CUR", "OLD", "NEW"], "5y", backfilled={"CUR", "OLD"})
+    assert plan == {"1mo": ["CUR"], "5y": ["OLD", "NEW"]}
+    # current but never deepened to the configured period -> backfill once
+    assert px.plan(["CUR"], "5y", backfilled=set()) == {"5y": ["CUR"]}

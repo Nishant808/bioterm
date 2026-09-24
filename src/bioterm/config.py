@@ -48,6 +48,7 @@ class Settings:
     seed: list[dict[str, Any]] = field(default_factory=list)
     feeds: list[dict[str, Any]] = field(default_factory=list)
     manual_catalysts: list[dict[str, Any]] = field(default_factory=list)
+    funds: list[dict[str, Any]] = field(default_factory=list)
 
     # --- env-derived ---
     @property
@@ -84,6 +85,10 @@ class Settings:
         return node
 
     @property
+    def benchmarks(self) -> list[str]:
+        return [str(b).upper() for b in (self.get("benchmarks", default=[]) or [])]
+
+    @property
     def horizon_months(self) -> int:
         return int(self.get("horizon_months", default=6))
 
@@ -105,6 +110,7 @@ def load_settings() -> Settings:
     seed = _read_yaml("universe_seed.yml").get("seed", []) or []
     feeds = _read_yaml("sources.yml").get("feeds", []) or []
     manual = _read_yaml("catalysts_manual.yml").get("catalysts", []) or []
+    funds = _read_yaml("institutions.yml").get("funds", []) or []
     DATA_DIR.mkdir(exist_ok=True)
     CACHE_DIR.mkdir(exist_ok=True)
     return Settings(
@@ -113,6 +119,7 @@ def load_settings() -> Settings:
         seed=seed,
         feeds=feeds,
         manual_catalysts=manual,
+        funds=funds,
     )
 
 

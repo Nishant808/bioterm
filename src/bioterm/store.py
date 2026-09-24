@@ -10,14 +10,16 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from datetime import date, datetime, timezone
 from typing import Any
 
 import pandas as pd
 
 from .config import load_settings
-from .db import (app_meta, bulk_upsert, get_engine, manual_catalysts, notes,
-                 read_sql, watchlist)
+from .util import as_text
+from .db import (app_meta, bulk_upsert, get_engine, manual_catalysts, molecule_links,
+                 molecule_status, molecule_trials, molecules, notes, read_sql, watchlist)
 
 log = logging.getLogger("bioterm.store")
 
@@ -178,6 +180,124 @@ def get_meta(key: str, default: Any = None) -> Any:
 def set_meta(key: str, value: Any) -> None:
     bulk_upsert(app_meta, [{"key": key, "value": json.dumps(value, default=str),
                             "updated_at": _now()}])
+
+
+# ------------------------------------------------------------------ molecules
+# A drug-code-looking token ("VX-548", "V940", "SRP-9003", "mRNA-4157") or an
+# INN stem ("delandistrogene", "suzetrigine", "...mab") inside parentheses is
+# another name for the asset; anything else in parentheses is the indication.
+_CODE_RE = re.compile(r"^[A-Za-z]{1,6}-?\d{2,}[A-Za-z0-9-]*$")
+_INN_RE = re.compile(r"(mab|nib|gene|cel|ran|tide|stat|gine|parin|vir|sen|rsen|siran|"
+                     r"cept|lukast|zumab|ximab|tinib|ciclib|dustat|platin|trogene)$", re.I)
+
+
+def _looks_like_name(token: str) -> bool:
+    t = token.strip()
+    return bool(_CODE_RE.match(t) or (" " not in t and _INN_RE.search(t)))
+
+
+def molecule_id(ticker: str, name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", f"{ticker}-{name}".lower()).strip("-")
+    return slug[:48]
+
+
+def parse_molecule_label(label: str, ticker: str) -> dict[str, Any]:
+    """Watchlist free text -> structured molecule.
+
+    "mRNA-4157/V940 (melanoma)"  -> name mRNA-4157, aliases [V940], indication melanoma
+    "suzetrigine (VX-548)"       -> name suzetrigine, aliases [VX-548]
+    """
+    label = " ".join(str(label or "").split())
+    paren = re.findall(r"\(([^)]*)\)", label)
+    head = re.sub(r"\([^)]*\)", " ", label).strip()
+    names = [n.strip() for n in re.split(r"\s*/\s*", head) if n.strip()]
+    aliases, indication = names[1:], []
+    for p in paren:
+        parts = [x.strip() for x in p.split(",") if x.strip()]
+        if parts and all(_looks_like_name(x) for x in parts):
+            aliases.extend(parts)
+        else:
+            indication.append(p.strip())
+    name = names[0] if names else label
+    return {"id": molecule_id(ticker, name), "ticker": ticker.upper(), "name": name,
+            "aliases": list(dict.fromkeys(a for a in aliases if a.lower() != name.lower())),
+            "indication": "; ".join(indication), "nct_ids": [], "notes": ""}
+
+
+def _jlist(v) -> list:
+    if isinstance(v, list):
+        return v
+    try:
+        out = json.loads(v) if v else []
+        return out if isinstance(out, list) else []
+    except (TypeError, ValueError):
+        return []
+
+
+def get_molecules(ticker: str | None = None) -> list[dict[str, Any]]:
+    try:
+        if ticker:
+            df = read_sql("SELECT * FROM molecules WHERE ticker = :t ORDER BY name",
+                          {"t": ticker.upper()})
+        else:
+            df = read_sql("SELECT * FROM molecules ORDER BY ticker, name")
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    for _, r in df.iterrows():
+        d = r.to_dict()
+        d["aliases"] = _jlist(d.get("aliases"))
+        d["nct_ids"] = _jlist(d.get("nct_ids"))
+        out.append(d)
+    return out
+
+
+def save_molecule(m: dict[str, Any]) -> str:
+    ticker = as_text(m.get("ticker")).upper()
+    name = as_text(m.get("name"))
+    if not ticker or not name:
+        raise ValueError("a molecule needs a ticker and a name")
+    mid = m.get("id") or molecule_id(ticker, name)
+
+    def _as_list(v) -> list[str]:
+        if isinstance(v, str):
+            v = re.split(r"[,;\n]", v)
+        return [str(x).strip() for x in (v or []) if str(x).strip()]
+    ncts = [x.upper() for x in _as_list(m.get("nct_ids"))
+            if re.fullmatch(r"NCT\d{8}", x.strip().upper())]
+    now = _now()
+    bulk_upsert(molecules, [{
+        "id": mid, "ticker": ticker, "name": name,
+        "aliases": json.dumps(_as_list(m.get("aliases"))),
+        "indication": as_text(m.get("indication")) or None,
+        "nct_ids": json.dumps(ncts), "notes": as_text(m.get("notes")) or None,
+        "created_at": now, "updated_at": now}],
+        update_only=["ticker", "name", "aliases", "indication", "nct_ids", "notes",
+                     "updated_at"])
+    return mid
+
+
+def delete_molecule(mid: str) -> None:
+    with get_engine().begin() as conn:
+        for t, col in ((molecules, molecules.c.id), (molecule_trials, molecule_trials.c.molecule_id),
+                       (molecule_links, molecule_links.c.molecule_id),
+                       (molecule_status, molecule_status.c.molecule_id)):
+            conn.execute(t.delete().where(col == mid))
+
+
+def sync_molecules_from_watchlist() -> int:
+    """Add a tracked molecule for every watchlist entry's free-text molecule that
+    isn't tracked yet. Never overwrites a molecule the user has edited."""
+    have = {m["id"] for m in get_molecules()}
+    added = 0
+    for w in get_watchlist():
+        for label in w.get("molecules") or []:
+            m = parse_molecule_label(label, w["ticker"])
+            if m["id"] not in have:
+                save_molecule(m)
+                have.add(m["id"])
+                added += 1
+    return added
 
 
 # ------------------------------------------------------------------ seeding

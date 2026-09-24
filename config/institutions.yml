@@ -1,0 +1,21 @@
+# Biotech specialist funds whose 13F-HR filings BioTerm tracks ("smart money").
+# CIKs were checked against SEC EDGAR's entity index (Sep 2026). An entry without a
+# CIK is resolved by name at run time and the match is logged - add more freely.
+funds:
+  - {name: "Baker Bros. Advisors LP",         short: "Baker Bros",   cik: "1263508"}
+  - {name: "RA Capital Management, L.P.",     short: "RA Capital",   cik: "1346824"}
+  - {name: "Perceptive Advisors LLC",         short: "Perceptive",   cik: "1224962"}
+  - {name: "OrbiMed Advisors LLC",            short: "OrbiMed",      cik: "1055951"}
+  - {name: "Deerfield Management Company",    short: "Deerfield",    cik: "1009258"}
+  - {name: "BVF Inc",                         short: "BVF",          cik: "1056807"}
+  - {name: "Redmile Group, LLC",              short: "Redmile",      cik: "1425738"}
+  - {name: "EcoR1 Capital, LLC",              short: "EcoR1",        cik: "1587114"}
+  - {name: "Cormorant Asset Management, LP",  short: "Cormorant",    cik: "1583977"}
+  - {name: "Avoro Capital Advisors LLC",      short: "Avoro",        cik: "1633313"}
+  - {name: "Casdin Capital, LLC",             short: "Casdin",       cik: "1534261"}
+  - {name: "Boxer Capital, LLC",              short: "Boxer",        cik: "1465837"}
+  - {name: "Vivo Capital, LLC",               short: "Vivo",         cik: "1674712"}
+  - {name: "RTW Investments",                 short: "RTW"}
+  - {name: "Venrock Healthcare Capital Partners", short: "Venrock HCP"}
+  - {name: "Commodore Capital",               short: "Commodore"}
+  - {name: "Deep Track Capital",              short: "Deep Track"}

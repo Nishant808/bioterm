@@ -94,3 +94,34 @@ def get_bytes(
 ) -> bytes:
     return _request(url, params, headers, min_interval, want="bytes", retries=retries,
                     timeout=timeout, backoff_429=backoff_429)
+
+
+def post_json(
+    url: str,
+    payload: Any,
+    *,
+    headers: dict[str, str] | None = None,
+    min_interval: float = 0.2,
+    retries: int = 3,
+    timeout: float | None = None,
+    backoff_429: float = 10.0,
+) -> Any:
+    """POST a JSON body, return the decoded JSON reply (same politeness rules as GETs)."""
+    retryer = Retrying(
+        reraise=True,
+        stop=stop_after_attempt(retries),
+        wait=wait_exponential(multiplier=1, min=2, max=12),
+        retry=retry_if_exception_type((requests.RequestException,)),
+    )
+    to = timeout if timeout is not None else load_settings().http_timeout
+
+    def _once():
+        _throttle(_host(url), min_interval)
+        resp = session().post(url, json=payload, headers=headers, timeout=(5, to))
+        if resp.status_code == 429:
+            log.warning("429 from %s - backing off %ss", _host(url), backoff_429)
+            time.sleep(backoff_429)
+        resp.raise_for_status()
+        return resp.json()
+
+    return retryer(_once)

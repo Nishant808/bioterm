@@ -1,0 +1,87 @@
+<?xml version="1.0" ?>
+<informationTable xsi:schemaLocation="http://www.sec.gov/edgar/document/thirteenf/informationtable eis_13FDocument.xsd" xmlns="http://www.sec.gov/edgar/document/thirteenf/informationtable" xmlns:n1="http://www.sec.gov/edgar/document/thirteenf/informationtable" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <infoTable>
+    <nameOfIssuer>ACADIA Pharmaceuticals Inc.</nameOfIssuer>
+    <titleOfClass>COM</titleOfClass>
+    <cusip>004225108</cusip>
+    <value>1085696471</value>
+    <shrsOrPrnAmt>
+      <sshPrnamt>42912904</sshPrnamt>
+      <sshPrnamtType>SH</sshPrnamtType>
+    </shrsOrPrnAmt>
+    <investmentDiscretion>SOLE</investmentDiscretion>
+    <votingAuthority><Sole>42912904</Sole><Shared>0</Shared><None>0</None></votingAuthority>
+  </infoTable>
+  <infoTable>
+    <nameOfIssuer>Alkermes plc</nameOfIssuer>
+    <titleOfClass>SHS</titleOfClass>
+    <cusip>G01767105</cusip>
+    <value>524592729</value>
+    <shrsOrPrnAmt>
+      <sshPrnamt>10012267</sshPrnamt>
+      <sshPrnamtType>SH</sshPrnamtType>
+    </shrsOrPrnAmt>
+    <investmentDiscretion>SOLE</investmentDiscretion>
+    <votingAuthority><Sole>10012267</Sole><Shared>0</Shared><None>0</None></votingAuthority>
+  </infoTable>
+  <infoTable>
+    <nameOfIssuer>Incyte Corporation</nameOfIssuer>
+    <titleOfClass>COM</titleOfClass>
+    <cusip>45337C102</cusip>
+    <value>3487217729</value>
+    <shrsOrPrnAmt>
+      <sshPrnamt>30762330</sshPrnamt>
+      <sshPrnamtType>SH</sshPrnamtType>
+    </shrsOrPrnAmt>
+    <investmentDiscretion>SOLE</investmentDiscretion>
+    <votingAuthority><Sole>30762330</Sole><Shared>0</Shared><None>0</None></votingAuthority>
+  </infoTable>
+  <infoTable>
+    <nameOfIssuer>Insmed Incorporated</nameOfIssuer>
+    <titleOfClass>COM PAR $.01</titleOfClass>
+    <cusip>457669307</cusip>
+    <value>937841355</value>
+    <shrsOrPrnAmt>
+      <sshPrnamt>8796111</sshPrnamt>
+      <sshPrnamtType>SH</sshPrnamtType>
+    </shrsOrPrnAmt>
+    <investmentDiscretion>SOLE</investmentDiscretion>
+    <votingAuthority><Sole>8796111</Sole><Shared>0</Shared><None>0</None></votingAuthority>
+  </infoTable>
+  <infoTable>
+    <nameOfIssuer>Surrozen, Inc. Warrants @ $172.50 8/11/2026 (15 FOR 1)</nameOfIssuer>
+    <titleOfClass>W EXP 8/11/2026</titleOfClass>
+    <cusip>86889P117</cusip>
+    <value>13750</value>
+    <shrsOrPrnAmt>
+      <sshPrnamt>833333</sshPrnamt>
+      <sshPrnamtType>SH</sshPrnamtType>
+    </shrsOrPrnAmt>
+    <investmentDiscretion>SOLE</investmentDiscretion>
+    <votingAuthority><Sole>833333</Sole><Shared>0</Shared><None>0</None></votingAuthority>
+  </infoTable>
+  <infoTable>
+    <nameOfIssuer>Celcuity Inc.</nameOfIssuer>
+    <titleOfClass>COM</titleOfClass>
+    <cusip>15102K100</cusip>
+    <value>828150159</value>
+    <shrsOrPrnAmt>
+      <sshPrnamt>7915792</sshPrnamt>
+      <sshPrnamtType>SH</sshPrnamtType>
+    </shrsOrPrnAmt>
+    <investmentDiscretion>SOLE</investmentDiscretion>
+    <votingAuthority><Sole>7915792</Sole><Shared>0</Shared><None>0</None></votingAuthority>
+  </infoTable>
+  <infoTable>
+    <nameOfIssuer>Celcuity Inc.</nameOfIssuer>
+    <titleOfClass>Note  2.75% 8/1/2031</titleOfClass>
+    <cusip>15102KAA8</cusip>
+    <value>69158687</value>
+    <shrsOrPrnAmt>
+      <sshPrnamt>30750000</sshPrnamt>
+      <sshPrnamtType>PRN</sshPrnamtType>
+    </shrsOrPrnAmt>
+    <investmentDiscretion>SOLE</investmentDiscretion>
+    <votingAuthority><Sole>30750000</Sole><Shared>0</Shared><None>0</None></votingAuthority>
+  </infoTable>
+</informationTable>

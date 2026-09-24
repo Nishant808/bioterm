@@ -33,3 +33,43 @@ def as_text(value: Any) -> str:
     except (TypeError, ValueError):
         pass
     return str(value).strip()
+
+
+# Trailing corporate-form / security-class words that differ between how a company
+# is named in an ETF sheet, a 13F filing and SEC's own index ("Cytokinetics,
+# Incorporated" / "CYTOKINETICS INC" / "Cytokinetics Inc - Sponsored ADR").
+_CORP_TAIL = {
+    "INC", "INCORPORATED", "CORP", "CORPORATION", "CO", "COMPANY", "LTD", "LIMITED",
+    "PLC", "SA", "NV", "SE", "AG", "AB", "ASA", "OYJ", "LLC", "LP", "HOLDINGS",
+    "HOLDING", "GROUP", "SPONSORED", "ADR", "ADS", "ORD", "SHS", "COM", "CL", "CLASS",
+    "A", "B", "NEW", "DEL", "THE",
+}
+# Industry words: dropped only for the looser "core" key
+_INDUSTRY = {
+    "THERAPEUTICS", "PHARMACEUTICALS", "PHARMACEUTICAL", "PHARMA", "BIOSCIENCES",
+    "BIOSCIENCE", "BIOTHERAPEUTICS", "MEDICINES", "BIOLOGICS", "BIOPHARMA",
+    "BIOPHARMACEUTICALS", "SCIENCES", "GENETICS", "BIOTECHNOLOGY", "BIOTECH", "BIO",
+    "LABORATORIES", "LABS", "ONCOLOGY", "THERAPEUTIC",
+}
+
+
+def company_key(name: Any) -> str:
+    """Canonical company name for cross-source matching: upper case, punctuation
+    and trailing corporate-form words removed ("Alkermes plc" -> "ALKERMES")."""
+    s = as_text(name).upper().replace("&", " AND ")
+    s = re.sub(r"\(.*?\)", " ", s)
+    toks = [t for t in re.sub(r"[^A-Z0-9 ]", " ", s).split() if t]
+    while toks and toks[0] == "THE":
+        toks.pop(0)
+    while toks and toks[-1] in _CORP_TAIL:
+        toks.pop()
+    return " ".join(toks)
+
+
+def company_core(name: Any) -> str:
+    """``company_key`` minus trailing industry words ("INSMED", "VERTEX") - looser,
+    so only trusted when it is unique across the universe."""
+    toks = company_key(name).split()
+    while len(toks) > 1 and toks[-1] in _INDUSTRY:
+        toks.pop()
+    return " ".join(toks)

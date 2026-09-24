@@ -1,4 +1,12 @@
-"""Price ingestion via yfinance -> ``prices`` table (daily OHLCV)."""
+"""Price ingestion via yfinance -> ``prices`` table (daily OHLCV).
+
+Incremental: a ticker already stored with a recent close only fetches the last
+month (a handful of rows to upsert instead of years of history on every run);
+a new ticker - or one whose history hasn't been deepened to the configured
+period yet - gets one full backfill, remembered in app_meta so short-history
+names (recent IPOs) aren't re-downloaded daily. Benchmark ETFs (XBI, IBB, SPY)
+ride along for the market-regime and relative-strength signals.
+"""
 from __future__ import annotations
 
 import logging
@@ -7,7 +15,7 @@ import pandas as pd
 import yfinance as yf
 
 from ..config import load_settings
-from ..db import bulk_upsert, prices
+from ..db import bulk_upsert, prices, read_sql
 from ..universe import universe_tickers
 
 log = logging.getLogger("bioterm.ingest.prices")
@@ -27,19 +35,39 @@ def _download(tickers: list[str], period: str) -> pd.DataFrame:
     return data
 
 
+def plan(tickers: list[str], period: str, backfilled: set[str],
+         today: pd.Timestamp | None = None) -> dict[str, list[str]]:
+    """Split tickers into {period: [tickers]} - "1mo" for names that are current
+    and already backfilled, the full ``period`` for everything else. Pure."""
+    today = today or pd.Timestamp.today().normalize()
+    have = read_sql("SELECT ticker, MAX(date) AS last FROM prices GROUP BY ticker")
+    last = dict(zip(have["ticker"], pd.to_datetime(have["last"]))) if not have.empty else {}
+    out: dict[str, list[str]] = {"1mo": [], period: []}
+    for tk in tickers:
+        lt = last.get(tk)
+        fresh = lt is not None and (today - lt).days <= 12
+        out["1mo" if fresh and tk in backfilled else period].append(tk)
+    return {k: v for k, v in out.items() if v}
+
+
 def run(tickers: list[str] | None = None) -> dict:
+    from ..store import get_meta, set_meta
+
     cfg = load_settings()
-    period = cfg.get("price_history_period", default="2y")
-    tickers = tickers or universe_tickers()
+    period = cfg.get("price_history_period", default="5y")
+    tickers = list(dict.fromkeys((tickers or universe_tickers()) + cfg.benchmarks))
+    backfilled = set(get_meta(f"prices_backfilled_{period}", []) or [])
     total = 0
     failed: list[str] = []
+    done_full: list[str] = []
 
     # batch to keep memory/URL length sane on a 16 GB machine
     batch_size = 60
-    for i in range(0, len(tickers), batch_size):
-        batch = tickers[i : i + batch_size]
+    jobs = [(per, grp[i:i + batch_size]) for per, grp in plan(tickers, period, backfilled).items()
+            for i in range(0, len(grp), batch_size)]
+    for per, batch in jobs:
         try:
-            data = _download(batch, period)
+            data = _download(batch, per)
         except Exception as exc:  # noqa: BLE001
             log.warning("batch download failed %s: %s", batch[:3], exc)
             failed.extend(batch)
@@ -74,12 +102,17 @@ def run(tickers: list[str] | None = None) -> dict:
                     for _, r in df.iterrows()
                 ]
                 total += bulk_upsert(prices, rows)
+                if per == period:
+                    done_full.append(tk)
             except Exception as exc:  # noqa: BLE001
                 log.warning("parse failed for %s: %s", tk, exc)
                 failed.append(tk)
 
-    log.info("prices: upserted %d rows, %d tickers failed", total, len(failed))
-    return {"rows": total, "failed": failed}
+    if done_full:
+        set_meta(f"prices_backfilled_{period}", sorted(backfilled | set(done_full)))
+    log.info("prices: upserted %d rows, %d tickers failed (%d backfilled to %s)",
+             total, len(failed), len(done_full), period)
+    return {"rows": total, "failed": failed, "backfilled": len(done_full)}
 
 
 def _f(v) -> float | None:

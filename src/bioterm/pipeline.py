@@ -10,10 +10,11 @@ import traceback
 from datetime import datetime, timezone
 
 from .db import bulk_upsert, ingest_runs, init_db
-from .ingest import clinical, edgar, fda, insiders
+from .ingest import clinical, edgar, fda, insiders, institutions, options, short_volume
 from .ingest import fundamentals as ingest_fundamentals
+from .ingest import molecules as ingest_molecules
 from .ingest import news, prices
-from .process import catalysts, score, sentiment, technicals
+from .process import backtest, catalysts, finbert, molecules, score, sentiment, signals, technicals
 from .universe import build_universe, universe_tickers
 
 log = logging.getLogger("bioterm.pipeline")
@@ -94,11 +95,33 @@ def refresh_news(tickers: list[str] | None = None) -> dict:
     return out
 
 
+def refresh_alt_data(tickers: list[str] | None = None) -> dict:
+    """Specialist-fund 13Fs, FINRA short volume, options chains, per-molecule
+    trials + literature. Each is bounded and fails soft."""
+    out = {}
+    out["short_volume"] = run_job("short_volume", short_volume.run, tickers)
+    out["institutions"] = run_job("institutions", institutions.run)
+    out["molecule_trials"] = run_job("molecule_trials", ingest_molecules.run)
+    out["options"] = run_job("options", options.run)
+    return out
+
+
+def refresh_nlp(_: list[str] | None = None) -> dict:
+    # a no-op (VADER stays) unless the nlp extra is installed - see process/finbert.py
+    return {"finbert": run_job("finbert", finbert.run)}
+
+
 def recompute(_: list[str] | None = None) -> dict:
     out = {}
     out["catalysts"] = run_job("catalysts", catalysts.run)
+    out["molecules"] = run_job("molecules", molecules.run)
     out["score"] = run_job("score", score.run)
+    out["signals"] = run_job("signals", signals.run)
     return out
+
+
+def run_backtest(_: list[str] | None = None) -> dict:
+    return {"backtest": run_job("backtest", backtest.run)}
 
 
 def run_full_refresh(limit: int | None = None, skip_universe: bool = False) -> dict:
@@ -115,7 +138,10 @@ def run_full_refresh(limit: int | None = None, skip_universe: bool = False) -> d
         "news": refresh_news(tickers),
         # insiders.run() targets watchlist + the *previous* run's top-60 focus names
         "insiders": refresh_insiders(),
+        "alt_data": refresh_alt_data(tickers),
+        "nlp": refresh_nlp(),
         "recompute": recompute(),
+        "backtest": run_backtest(),
     }
     return results
 
