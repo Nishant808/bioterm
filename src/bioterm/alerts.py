@@ -151,7 +151,9 @@ def _signal_transitions(rules: dict, only: set[str] | None) -> list[dict]:
         except (TypeError, ValueError):
             top = []
         why = top[0]["title"] if top else ""
+        # keyed on the day's transition, not the net (which drifts with each intraday re-run)
         out.append({"kind": "signal", "ticker": r["ticker"],
+                    "key": f"{pd.to_datetime(days.iloc[0]['asof']).date()}|{was}|{r['label']}",
                     "detail": f"{was} → {r['label']} (net {float(r['net']):+.2f}) — {strip_markup(why)[:100]}",
                     "weight": abs(float(r["net"])) + 0.5 * abs(SIGNAL_RANK.get(r["label"], 0))})
     return out
@@ -186,7 +188,7 @@ def run(deliver: bool = True, max_deliver: int = 12) -> dict:
 
     new_rows, fresh = [], []
     for a in fired:
-        aid = _aid(a["kind"], a["ticker"], a["detail"])
+        aid = _aid(a["kind"], a["ticker"], a.get("key") or a["detail"])
         if aid in known_ids:
             continue
         row = {"id": aid, "ts": now, "kind": a["kind"], "ticker": a["ticker"],

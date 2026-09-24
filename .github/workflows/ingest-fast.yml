@@ -1,5 +1,6 @@
-# Fast pass: sector news + per-ticker Google News + sentiment + catalysts + Focus
-# Score + alert check. ~4-8 min. Keeps "Stocks in Focus" and the news feed current.
+# Fast pass: sector news + per-ticker Google News + sentiment + catalysts +
+# molecule links + Focus Score + BUY/SELL signals + alert check. ~4-8 min. Keeps
+# "Stocks in Focus", the signal board and the news feed current.
 #
 # Secrets: DATABASE_URL, SEC_UA  (+ optional TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)
 #

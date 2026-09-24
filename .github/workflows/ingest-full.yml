@@ -1,12 +1,15 @@
 # Full pipeline: universe + prices + technicals + EDGAR + fundamentals + clinical
-# trials + FDA + insiders + news + catalysts + Focus Score. ~15-25 min.
+# trials + FDA + insiders + news + alt data (13F, FINRA short volume, options,
+# per-molecule trials) + FinBERT + catalysts + Focus Score + signals + backtest.
+# ~18-28 min (the first run backfills 5y of prices, 4 quarters of 13Fs and 30
+# days of short volume - later runs are incremental).
 #
 # Secrets: DATABASE_URL, SEC_UA
 #
 # Cadence tuned for a PRIVATE repo (2000 Actions-min/month free tier):
-#   once daily at 09:00 UTC  ·  ~30 runs/month · ~20 min · ~600 min/month
+#   once daily at 09:00 UTC  ·  ~30 runs/month · ~22 min · ~660 min/month
 #   (prices/fundamentals/trials/filings don't move fast enough to need more)
-# Combined with ingest-fast that's ~1650 min/month. On a public repo you can run
+# Combined with ingest-fast that's ~1750 min/month. On a public repo you can run
 # this 3x/day ("0 6,13,21 * * *").
 
 name: ingest-full
@@ -23,13 +26,26 @@ concurrency:
 jobs:
   full:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
       - run: uv sync --no-dev
+      # FinBERT: CPU-only torch + transformers, installed next to (not in) the locked
+      # env so the dashboard/lockfile stay light. `uv run` never removes them (inexact
+      # sync). Without them process/finbert.py is a no-op and VADER tone stays.
+      - name: NLP extra (FinBERT)
+        continue-on-error: true
+        run: |
+          uv pip install --index-url https://download.pytorch.org/whl/cpu torch
+          uv pip install "transformers>=4.44"
+      - name: Cache FinBERT model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-finbert-v1
       - name: Full refresh
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

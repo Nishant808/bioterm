@@ -65,3 +65,7 @@ def test_signal_label_transitions_alert_once():
     assert sig[0]["detail"].startswith("NEUTRAL → STRONG BUY")
     assert alerts.run(deliver=False)["new"] >= 1
     assert alerts.run(deliver=False)["new"] == 0
+    # an intraday re-run moves the net but not the call: still no new alert
+    bulk_upsert(signal_scores, [{"ticker": "AAA", "asof": d2, "label": "STRONG BUY",
+                                 "net": 0.66, "top": top}])
+    assert alerts.run(deliver=False)["new"] == 0

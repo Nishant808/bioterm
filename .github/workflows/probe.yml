@@ -1,0 +1,108 @@
+# Live-source smoke test on a throwaway SQLite DB (never touches DATABASE_URL):
+# runs every ingest + process job against the real endpoints over a small slice
+# of the universe and prints a data-quality report. Use it after changing an
+# ingest module - sources change formats without notice.
+#
+# Secrets: SEC_UA (EDGAR requires a contact User-Agent). ~15-20 min.
+
+name: probe
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main-vcyb9o]
+    paths:
+      - "src/bioterm/**"
+      - "config/**"
+      - ".github/workflows/probe.yml"
+
+concurrency:
+  group: bioterm-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      BIOTERM_SEC_USER_AGENT: ${{ secrets.SEC_UA }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --no-dev
+      - name: NLP extra (FinBERT)
+        continue-on-error: true
+        run: |
+          uv pip install --index-url https://download.pytorch.org/whl/cpu torch
+          uv pip install "transformers>=4.44"
+      - name: Cache FinBERT model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-finbert-v1
+      - name: Universe + market
+        run: |
+          uv run bioterm init-db
+          uv run bioterm universe
+          uv run bioterm ingest --limit 70 --only prices,technicals
+      - name: Filings, fundamentals, trials
+        run: uv run bioterm ingest --limit 30 --only edgar,fundamentals,clinical,fda
+      - name: Alt data
+        run: uv run bioterm ingest --limit 70 --only shortvol,institutions,molecules,options
+      - name: News + NLP
+        run: uv run bioterm ingest --limit 25 --only news,sentiment,finbert
+      - name: Derived
+        run: uv run bioterm ingest --only catalysts,mollinks,score,signals,backtest,insiders
+      - name: Report
+        if: always()
+        run: |
+          uv run python - <<'EOF'
+          import json
+          import pandas as pd
+          from bioterm.db import read_sql
+          pd.set_option("display.width", 220); pd.set_option("display.max_columns", 30)
+          pd.set_option("display.max_colwidth", 70)
+          def q(title, sql):
+              print(f"\n===== {title}")
+              try:
+                  df = read_sql(sql)
+                  print(df.to_string(index=False) if not df.empty else "(empty)")
+              except Exception as e:
+                  print("ERR", e)
+          for t in ["securities", "prices", "fundamentals", "filings", "trials", "news", "news_nlp",
+                    "catalysts", "insider_txns", "inst_filers", "inst_holdings", "cusip_map",
+                    "short_volume", "options_snapshots", "molecules", "molecule_trials",
+                    "molecule_links", "molecule_status", "signals", "signal_scores", "backtests"]:
+              q(t, f"SELECT COUNT(*) AS n FROM {t}")
+          q("job errors", "SELECT job, status, rows, substr(detail, 1, 600) AS detail FROM ingest_runs ORDER BY id")
+          q("13F filers", "SELECT cik, name, last_period, last_filed FROM inst_filers")
+          q("13F by fund/period", "SELECT cik, period, COUNT(*) AS n, SUM(value)/1e6 AS value_m, SUM(ticker IS NOT NULL) AS mapped FROM inst_holdings GROUP BY cik, period ORDER BY cik, period")
+          q("cusip map methods", "SELECT method, COUNT(*) AS n FROM cusip_map GROUP BY method")
+          q("unmapped top issuers", "SELECT issuer, cusip, SUM(value)/1e6 AS value_m FROM inst_holdings WHERE ticker IS NULL GROUP BY issuer, cusip ORDER BY value_m DESC LIMIT 15")
+          q("short volume latest", "SELECT * FROM short_volume ORDER BY date DESC, short_volume DESC LIMIT 8")
+          q("short volume dates", "SELECT date, COUNT(*) AS n FROM short_volume GROUP BY date ORDER BY date DESC LIMIT 5")
+          q("options", "SELECT ticker, expiry, days_to_expiry, atm_iv, implied_move, pc_volume_ratio, pc_oi_ratio, vol_oi_ratio FROM options_snapshots LIMIT 15")
+          q("molecules", "SELECT id, ticker, name, aliases, nct_ids FROM molecules LIMIT 20")
+          q("molecule status", "SELECT * FROM molecule_status LIMIT 20")
+          q("molecule trials", "SELECT molecule_id, nct_id, phase, status, primary_completion_date, source FROM molecule_trials LIMIT 25")
+          q("molecule links", "SELECT molecule_id, kind, COUNT(*) AS n FROM molecule_links GROUP BY molecule_id, kind LIMIT 30")
+          q("finbert sample", "SELECT n.title, x.vader, x.finbert, x.label, x.confidence FROM news_nlp x JOIN news n ON n.id = x.id LIMIT 15")
+          q("signal labels", "SELECT label, COUNT(*) AS n FROM signal_scores GROUP BY label")
+          q("signal codes", "SELECT code, side, COUNT(*) AS n, AVG(strength) AS s FROM signals GROUP BY code, side ORDER BY n DESC")
+          q("top calls", "SELECT ticker, label, net, bull, bear, n_buy, n_sell, regime FROM signal_scores ORDER BY net DESC LIMIT 10")
+          q("bottom calls", "SELECT ticker, label, net, bull, bear, n_buy, n_sell FROM signal_scores ORDER BY net ASC LIMIT 10")
+          q("molecule catalysts", "SELECT ticker, type, date, title FROM catalysts WHERE source = 'molecule-tracking' LIMIT 10")
+          try:
+              from bioterm.process import backtest as bt
+              from bioterm.process import smart_money as sm
+              fac = bt.latest("factor") or {}
+              print("\n===== factor study"); print(json.dumps({k: {kk: vv for kk, vv in v.items() if not isinstance(vv, list)} for k, v in (fac.get("factors") or {}).items()}, indent=1, default=str)[:3000])
+              ev = bt.latest("events") or {}
+              print("\n===== event study", ev.get("n_events")); print(json.dumps(ev.get("by_code"), indent=1, default=str)[:4000])
+              ch = sm.fund_changes(sm.load_holdings())
+              print("\n===== smart money"); print(sm.ticker_summary(ch).head(20).to_string(index=False))
+          except Exception as e:
+              print("ERR", e)
+          EOF
