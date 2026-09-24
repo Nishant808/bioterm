@@ -94,6 +94,21 @@ jobs:
           q("13F by fund/period", "SELECT cik, period, COUNT(*) AS n, SUM(value)/1e6 AS value_m, COUNT(ticker) AS mapped FROM inst_holdings GROUP BY cik, period ORDER BY cik, period")
           q("cusip map methods", "SELECT method, COUNT(*) AS n FROM cusip_map GROUP BY method")
           q("unmapped top issuers", "SELECT issuer, cusip, SUM(value)/1e6 AS value_m FROM inst_holdings WHERE ticker IS NULL GROUP BY issuer, cusip ORDER BY value_m DESC LIMIT 15")
+          q("distinct 13F cusips", "SELECT COUNT(DISTINCT cusip) AS n FROM inst_holdings")
+          q("mapping check", "SELECT cusip, ticker, method, issuer FROM cusip_map WHERE cusip IN ('670703107', '03753U106', '152309100', '22663K107', '03770N101')")
+          q("universe check", "SELECT ticker, name FROM securities WHERE ticker IN ('NUVL', 'APLS', 'CNTA', 'CRNX', 'APGE')")
+          try:
+              from bioterm.ingest.edgar import sec_titles
+              from bioterm.util import company_key
+              want = {"NUVL", "APLS", "CNTA", "CRNX", "APGE"}
+              print("\n===== sec titles check")
+              for tk, t in sec_titles():
+                  if tk in want:
+                      print(tk, repr(t), "->", company_key(t))
+              for n in ("NUVALENT INC", "Nuvalent Inc", "APELLIS PHARMACEUTICALS INC", "CENTESSA PHARMACEUTICALS PLC"):
+                  print(repr(n), "->", company_key(n))
+          except Exception as e:
+              print("ERR", e)
           q("molecule aliases", "SELECT molecule_id, discovered_aliases FROM molecule_status")
           q("trial sponsors", "SELECT molecule_id, nct_id, phase, sponsor_class, substr(sponsor, 1, 40) AS sponsor FROM molecule_trials ORDER BY molecule_id LIMIT 30")
           q("short volume latest", "SELECT * FROM short_volume ORDER BY date DESC, short_volume DESC LIMIT 8")
