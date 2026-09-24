@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from ..config import load_settings
@@ -81,6 +81,31 @@ def to_tone(probs: dict) -> tuple[float, str, float]:
     pos, neg = probs.get("positive", 0.0), probs.get("negative", 0.0)
     label = max(probs, key=probs.get) if probs else "neutral"
     return round(pos - neg, 4), label, round(probs.get(label, 0.0), 4)
+
+
+def reapply(days: int = 21) -> int:
+    """Put stored FinBERT tones back on recent headlines.
+
+    RSS feeds keep serving an article for days, and every news ingest upserts it
+    again with a fresh VADER score - which would silently undo FinBERT between the
+    daily runs. The news ingest calls this right after its upsert. Set-based (one
+    correlated UPDATE, portable across SQLite and Postgres), limited to rows scored
+    in the last ``days`` - older articles have dropped out of the feeds."""
+    from sqlalchemy import text
+
+    from ..db import get_engine
+
+    cut = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with get_engine().begin() as conn:
+            res = conn.execute(text(
+                "UPDATE news SET sentiment = (SELECT x.finbert FROM news_nlp x "
+                "WHERE x.id = news.id) WHERE id IN (SELECT id FROM news_nlp "
+                "WHERE scored_at >= :c AND finbert IS NOT NULL)"), {"c": cut})
+        return int(res.rowcount or 0)
+    except Exception as exc:  # noqa: BLE001 - never fail the news ingest over this
+        log.warning("finbert: could not re-apply stored tones: %s", exc)
+        return 0
 
 
 def run(max_rows: int | None = None, scorer: Scorer | None = None) -> dict:

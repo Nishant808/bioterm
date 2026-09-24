@@ -50,3 +50,17 @@ def test_clean_title_and_tone():
     assert finbert.clean_title("Phase 3 - topline due in Q4") == "Phase 3 - topline due in Q4"
     assert finbert.clean_title("Twist jumps on AI deal - timothysykes.com") == "Twist jumps on AI deal"
     assert finbert.to_tone({"positive": 0.7, "negative": 0.2, "neutral": 0.1}) == (0.5, "positive", 0.7)
+
+
+def test_reingested_headlines_keep_their_finbert_tone():
+    init_db()
+    now = datetime.now(timezone.utc)
+    bulk_upsert(news, [{"id": "a", "title": "Drug X approved", "published": now,
+                        "sentiment": 0.1}])
+    finbert.run(scorer=lambda texts: [{"positive": 0.9, "negative": 0.05,
+                                       "neutral": 0.05} for _ in texts])
+    # the next news ingest sees the same article in the feed and upserts VADER again
+    bulk_upsert(news, [{"id": "a", "title": "Drug X approved", "published": now,
+                        "sentiment": 0.1}])
+    assert finbert.reapply() == 1
+    assert read_sql("SELECT sentiment FROM news").iloc[0]["sentiment"] == 0.85

@@ -177,6 +177,10 @@ def run(tickers: list[str] | None = None, google: bool | None = None) -> dict:
                 _add(entry, "Google News", forced_ticker=tk)
 
     n = bulk_upsert(news, list(rows.values()))
+    # re-seen articles were just re-scored with VADER - restore their FinBERT tone
+    from ..process.finbert import reapply
+
+    reapply()
     log.info("news: %d headlines (%d feeds + %d ticker queries)",
              n, sum(1 for f in cfg.feeds if f.get("scope") == "sector"), len(tickers))
     return {"rows": n}

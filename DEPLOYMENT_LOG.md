@@ -108,11 +108,13 @@ runs the rest. Then you do C.
   (1.0–1.15) folded into the Focus Score; Stock Detail "👤 Insiders" tab. Live-tested
   (144 txns / 8 tickers in 16 s). Note: biotech insiders rarely open-market **buy**, so
   the multiplier is usually 1.0 — which is the point, it only fires on a real signal.
-- [ ] FinBERT sentiment (swap `process/sentiment.py`; ~400 MB model download in the Actions runner — cache it)
+- [x] FinBERT sentiment — `process/finbert.py`, daily in ingest-full (CPU torch + transformers beside the locked env, model cached); tone → `news.sentiment`, provenance in `news_nlp` (session 9)
 - [ ] LLM extraction of expected-readout dates from full news bodies (needs an LLM API key)
-- [ ] Backtest: replay the score against past biotech moves
-- [ ] Per-molecule tracking (link watchlist `molecules` → specific NCT ids / catalysts)
-- [ ] 13F holdings changes (whalewisdom-style, from SEC 13F-HR)
+- [x] Backtest — `process/backtest.py`: event study per price detector, factor study of Focus momentum + technical signal (IC, quintiles, equity curve vs XBI), live track record; Backtest page (session 9)
+- [x] Per-molecule tracking — `molecules` tables, CT.gov search by intervention across sponsors + pinned NCT ids, alias discovery, Europe PMC, links to news/catalysts; Molecules page (session 9)
+- [x] 13F holdings changes — 17 specialist funds (`config/institutions.yml`), quarter-over-quarter changes, CUSIP→ticker (names + OpenFIGI); Smart money & flow page (session 9)
+- [x] BUY/SELL early-signal engine — `process/signals.py` (~33 detectors, 6 families, regime, calibration, confluence rule), Signals page, signal-change alerts (session 9)
+- [x] FINRA daily short volume + options chains (implied move, put/call, vol/OI) (session 9)
 
 ### Local dev
 
@@ -636,3 +638,95 @@ work is structure, presentation and correctness of what's shown.
   (`REMOTION_CHROME` overrides it). There is no system ffmpeg; `pip install imageio-ffmpeg`
   supplies a static binary for `encode.sh`. A full 900-frame 1080p render takes about
   20 min on 4 cores.
+
+## 2026-09-24 — session 9: intelligence terminal (signals, 13F, molecules, FinBERT, backtest)
+
+User asked for the whole feature backlog plus "powerful buy/sell signals" and early
+detection on both sides, using all available open data, migrating whatever needed.
+Branch `main-vcyb9o` (not yet merged to `main`, so production is unchanged until it is).
+
+**New data (all keyless, all bounded + fail-soft):**
+- `ingest/institutions.py` — 13F-HR for 17 biotech specialist funds
+  (`config/institutions.yml`; 13 CIKs verified, 4 resolved at runtime via EDGAR
+  entity search). Info tables parsed namespace-agnostic, SH only, calls/puts and
+  notes skipped, pre-2023 values ×1000. CUSIP→ticker by normalised issuer name, then
+  OpenFIGI (largest positions first, 300/run). `process/smart_money.py` diffs each
+  fund's latest quarter against *its own* previous one.
+- `ingest/short_volume.py` — FINRA Reg SHO daily consolidated files, 30-day backfill,
+  180-day retention; 5- vs 20-session short share of volume.
+- `ingest/options.py` — yfinance chains for watchlist + top-60 + names with a binary
+  catalyst: ATM IV (front/back), straddle implied move, put/call volume + OI, vol/OI.
+- `ingest/molecules.py` + `process/molecules.py` — per-molecule tracking: CT.gov
+  search by intervention name across all sponsors (partnered trials) + pinned NCT ids,
+  alias discovery from intervention otherNames, Europe PMC paper counts; links to
+  headlines and catalysts; a molecule's trials feed the catalyst model
+  (`source = molecule-tracking`).
+- `process/finbert.py` — ProsusAI/finbert headline tone (p_pos − p_neg) into
+  `news.sentiment`, provenance in `news_nlp`. Installed only in ingest-full (CPU
+  torch + transformers beside the lock, HF cache); a no-op elsewhere.
+- Prices: 5y history once per ticker, then 1-month increments (`app_meta`
+  `prices_backfilled_5y`); XBI/IBB/SPY benchmarks priced. Fundamentals add short
+  ratio, institutional/insider ownership, beta.
+
+**Signal engine** (`process/signals.py`, runs in every fast + full refresh): ~33
+detectors in six evidence families → bull/bear/net → STRONG BUY … STRONG SELL, with
+the XBI regime, conviction, size, 13F age and backtest calibration as scalers, and a
+two-family confluence rule for STRONG calls. Label changes fire `signal` alerts
+(keyed on the day's transition, so intraday re-runs don't repeat them).
+
+**Backtest** (`process/backtest.py`, daily): event study of every price detector,
+factor study (Focus momentum, technical net, combined: IC, quintiles, equity curve vs
+XBI), live track record from `signal_scores` history.
+
+**Schema:** 13 new tables (34 total) + 4 fundamentals columns + `molecule_trials.
+sponsor_class`. `init_db()` now runs `migrate()` (ADD COLUMN for missing nullable
+columns), so Neon upgrades itself on the first run of the new code (dashboard or
+Actions, whichever comes first).
+
+**Dashboard v3:** sectioned top nav; new pages Signals, Smart money & flow,
+Molecules, Backtest; Overview signal radar + regime; Stock detail Signals and
+Funds & flow tabs + tracked molecules; Focus list signal column; Alerts rule for
+signal calls. Screenshotted on a synthetic DB (Playwright): all pages render.
+`pandas>=2.2` in requirements.txt forces the clean Cloud rebuild the new
+`bioterm.*` imports need.
+
+**Validation on live sources** — new `probe.yml` workflow (push to `main-vcyb9o` or
+dispatch): every ingest/process job against the real endpoints over a 25–70 ticker
+slice, a data-quality report, then every dashboard page rendered with AppTest.
+Run 1 (SQLite) passed end to end — 17 funds, 1,879 13F rows, 2,043 short-volume rows,
+1,260 headlines FinBERT-scored in 49 s, 119 molecule trials, signals + backtest on 70
+names — and exposed real-data bugs, all fixed:
+  - a fund that stopped filing (Boxer: last 13F 2024-Q4, a one-line filing) was read
+    as exiting its whole book → stub quarters (< 25% of the fund's typical position
+    count) are skipped and funds > 200 days behind the newest quarter are dropped;
+  - CT.gov otherNames carry arm labels ("VX-548 Placebo", "Seasonal influenza vaccine")
+    that became search terms → only name-shaped aliases are kept (`clean_aliases`);
+  - investigator-run Phase 4 trials of suzetrigine became VRTX catalysts → only
+    industry-run Phase 1–3 (or pinned) trials count (`material_trial`, sponsor class);
+  - publisher tails like "- timothysykes.com" reached FinBERT → stripped;
+  - every news ingest re-upserts articles still in the feeds with VADER, overwriting
+    FinBERT between daily runs → `finbert.reapply()` after each news upsert.
+  Run 2 moved the probe onto a Postgres 16 service (Neon's engine enforces VARCHAR
+  lengths SQLite ignores; strings are now truncated to column sizes).
+
+**What the backtest said (70 names, 5y, run 1):** the Focus momentum component and
+the net technical signal have ~zero IC at 1/3/6 months; several price detectors have
+*negative* 3-month edge (accumulation t≈−5, RS leader t≈−2.4 — biotech mean-reverts),
+and sell-side laggard/distribution flags were followed by *out*performance (partly
+survivorship bias). Consequence built in: calibration now cuts buy detectors to ×0.5
+and sell detectors to ×0.75 on negative evidence. The edge the engine can have is in
+the event families (catalyst setups, dilution, insiders, 13F, news), which can only
+be scored live — the track record accrues from today.
+
+**Budget:** ingest-full gains ~5–7 min/day (FinBERT ~1–4 min, 13F/FINRA/options/
+molecules ~3 min after the first backfill) → ~1,750 Actions min/month. The probe only
+runs on pushes to `main-vcyb9o` touching `src/`/`config/` (~10 min each).
+
+**Tests:** 165 passing (new: institutions, short volume, options, FinBERT, molecules,
+signals, backtest, migration, price plan, signal alerts, dashboard pages).
+
+**To deploy:** merge `main-vcyb9o` into `main`. Streamlit Cloud rebuilds (pandas floor),
+the next ingest-full backfills 5y prices / 4 quarters of 13F / 30 days of short volume
+and FinBERT-scores up to 6,000 headlines (first run ~30 min est., inside the 55-min
+timeout), then signals and the backtest populate. Until that first full run the new
+pages show their empty states.
