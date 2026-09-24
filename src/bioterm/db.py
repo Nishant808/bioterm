@@ -447,6 +447,12 @@ def read_sql(query, params: dict | None = None) -> pd.DataFrame:
     if isinstance(query, str):
         query = text(query)
     with engine.connect() as conn:
+        # Reads run in autocommit: psycopg then sends no BEGIN before the SELECT and
+        # no ROLLBACK when the pool takes the connection back - two of the four network
+        # round trips a read used to cost (ping, BEGIN, SELECT, ROLLBACK), which from
+        # Streamlit Cloud to Neon is most of a cold page load. The pool restores the
+        # default isolation on return, so writes (engine.begin()) stay transactional.
+        conn.execution_options(isolation_level="AUTOCOMMIT")
         return pd.read_sql(query, conn, params=params)
 
 

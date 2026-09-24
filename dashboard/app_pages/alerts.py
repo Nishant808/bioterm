@@ -4,7 +4,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from _shared import alerts_fired_df, news_df
+from _shared import alerts_fired_df, q
 from _ui import alert_detail, alert_rows, card, empty_state, kpi_row, page_header
 from bioterm import alerts as alert_engine
 from bioterm import store
@@ -21,6 +21,16 @@ def firing_now(rules: dict) -> list[dict]:
     return alert_engine.evaluate(rules)
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def tags_seen() -> list[str]:
+    """Every event tag in the news table - the rules picker's options. DISTINCT keeps it
+    to a few hundred short strings instead of thousands of full headline rows."""
+    df = q("SELECT DISTINCT event_tags FROM news "
+           "WHERE event_tags IS NOT NULL AND event_tags <> ''")
+    return sorted({t.strip() for s in df["event_tags"].astype(str)
+                   for t in s.split(",") if t.strip()})
+
+
 rules = alert_engine.get_rules()
 
 with st.expander("Alert rules", icon=":material/tune:", expanded=False):
@@ -29,8 +39,7 @@ with st.expander("Alert rules", icon=":material/tune:", expanded=False):
                                         0.01, 0.30, float(rules["score_jump"]), 0.01)
         rules["catalyst_within_days"] = st.slider("Flag a catalyst within N days", 3, 60,
                                                   int(rules["catalyst_within_days"]))
-    tags = news_df(4000)["event_tags"].dropna().astype(str).str.split(",").explode()
-    all_tags = sorted({t for t in tags.str.strip() if t})
+    all_tags = tags_seen()
     base = [t for t in rules["event_tags"] if not all_tags or t in all_tags]
     rules["event_tags"] = st.multiselect("High-signal event tags",
                                          sorted(set(all_tags) | set(rules["event_tags"])),

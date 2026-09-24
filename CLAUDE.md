@@ -91,7 +91,9 @@ open-market insider buying.
 - Every new ingest source: bounded request count + a wall-clock budget (see `fda.py`,
   `insiders.py`); fail soft (warn, continue), never abort the whole refresh.
 - Works on SQLite (local) **and** Postgres (cloud) — same schema. Test both mentally;
-  `read_sql` wraps raw strings in `text()`. SQLite stores DateTime as text with
+  `read_sql` wraps raw strings in `text()` and is for SELECTs only — it runs them in
+  autocommit (2 round trips to Neon instead of 4); writes go through `engine.begin()` /
+  `bulk_upsert` and stay transactional. SQLite stores DateTime as text with
   microseconds: in raw SQL pass time cuts as `"%Y-%m-%d %H:%M:%S"` strings with `>=`/`<=`,
   and never test `ts = :datetime` — use a Core `select(...).where(col == dt)` so the
   column type binds it (raw equality silently matched nothing on SQLite, session 7).
