@@ -715,7 +715,13 @@ names — and exposed real-data bugs, all fixed:
   included large US listings (Nuvalent, Apellis, Centessa, NewAmsterdam, Immatics) →
   a second name pass against SEC's `company_tickers.json` titles (exact normalised
   name, primary ticker first; earlier "none" results retried) and `company_key` now
-  folds initialisms ("N.V." → NV, "A/S" → AS, "HLDGS").
+  folds initialisms ("N.V." → NV, "A/S" → AS, "HLDGS"). Runs 3–4 (Postgres, green,
+  all pages ok): 417 of 450 CUSIPs mapped (140 universe name, 249 SEC name, 28
+  OpenFIGI). The 33 left are *not listed any more*: Nuvalent, Apellis, Centessa,
+  Apogee, Crinetics are held at 2026-06-30 but absent from SEC's current ticker file,
+  today's XBI and OpenFIGI's active US listings (acquired/delisted since), plus
+  private/pre-IPO lines. They show on Smart money under their CUSIP, correctly
+  without a ticker.
 
 **What the backtest said (70 names, 5y, run 1):** the Focus momentum component and
 the net technical signal have ~zero IC at 1/3/6 months; several price detectors have
