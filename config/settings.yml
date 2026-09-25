@@ -17,7 +17,11 @@ ingest:
   clinical_max_sponsors_per_run: 400   # ClinicalTrials.gov calls per clinical run
   news_google_per_ticker: true          # add a Google News RSS query per ticker
   news_lookback_days: 45                # drop news older than this on ingest
-  edgar_forms: ["8-K", "424B5", "S-1", "S-3"]   # filings that matter for catalysts/dilution
+  # filings that matter for catalysts, dilution and ownership (13D/G = 5%+ holders;
+  # 144 = insiders' planned sales). EDGAR renamed the 13D/G types in Dec 2024.
+  edgar_forms: ["8-K", "8-K/A", "6-K", "424B5", "424B4", "424B3", "S-1", "S-3", "S-3ASR",
+                "144", "SC 13D", "SC 13D/A", "SC 13G", "SC 13G/A", "SCHEDULE 13D",
+                "SCHEDULE 13D/A", "SCHEDULE 13G", "SCHEDULE 13G/A"]
   edgar_risk_forms: ["10-K", "10-Q"]            # checked for going-concern language
   risk_flag_max_fetches: 20                     # filing bodies downloaded per EDGAR run
 
@@ -178,6 +182,12 @@ signals:
     short_squeeze_setup:    {strength: 0.35, min_short_float: 0.20}
     short_pressure_rising:  {strength: 0.30, min_ratio: 0.55, min_delta: 0.08}
     pipeline_advance:       {strength: 0.30, days: 120}
+    trial_halted:           {strength: 0.60, days: 30}
+    readout_delay:          {strength: 0.35, min_days: 90, days: 30}
+    enrollment_complete:    {strength: 0.30, days: 45}
+    activist_stake:         {strength: 0.30}
+    ai_event_positive:      {strength: 0.45}
+    ai_event_negative:      {strength: 0.50}
 
 backtest:
   rebalance_every: 5          # trading days between point-in-time snapshots

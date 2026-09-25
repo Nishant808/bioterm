@@ -358,13 +358,46 @@ def event_detectors(tk: str, ctx: dict, feat: pd.DataFrame | None, det: dict,
              f"New {t0['phase']} trial started {pd.Timestamp(t0['start_date']):%b %d}",
              {"nct_id": t0["nct_id"], "title": str(t0["title"])[:140]})
 
+    tc = ctx.get("trial_changes", {}).get(tk)
+    if tc is not None and not tc.empty:
+        late = tc["phase"].fillna("").str.contains("P2|P3")
+        now_utc = pd.Timestamp.now(tz="UTC")
+        p = det.get("trial_halted", {})
+        stop = tc[late & tc["kind"].isin(["suspended", "terminated", "withdrawn"])
+                  & (tc["detected_at"] >= now_utc - pd.Timedelta(days=int(p.get("days", 30))))]
+        if not stop.empty:
+            r0 = stop.iloc[0]
+            fire("trial_halted", "SELL", float(p.get("strength", 0.6)),
+                 f"{r0['phase']} trial {r0['nct_id']} {r0['kind']} ({r0['old']} -> {r0['new']})",
+                 {"nct_id": r0["nct_id"], "kind": r0["kind"]})
+        p = det.get("readout_delay", {})
+        slip = tc[late & (tc["kind"] == "date_slip")
+                  & (tc["days"].fillna(0) >= float(p.get("min_days", 90)))
+                  & (tc["detected_at"] >= now_utc - pd.Timedelta(days=int(p.get("days", 30))))]
+        if not slip.empty:
+            r0 = slip.sort_values("days", ascending=False).iloc[0]
+            fire("readout_delay", "SELL",
+                 float(p.get("strength", 0.35)) * min(1.3, 0.7 + float(r0["days"]) / 365),
+                 f"{r0['phase']} readout pushed back {int(r0['days'])} days ({r0['old']} -> "
+                 f"{r0['new']}) on {r0['nct_id']}", {"nct_id": r0["nct_id"],
+                                                     "days": float(r0["days"])})
+        p = det.get("enrollment_complete", {})
+        enr = tc[late & (tc["kind"] == "enrollment_complete")
+                 & (tc["detected_at"] >= now_utc - pd.Timedelta(days=int(p.get("days", 45))))]
+        if not enr.empty:
+            r0 = enr.iloc[0]
+            fire("enrollment_complete", "BUY", float(p.get("strength", 0.3)),
+                 f"{r0['phase']} trial {r0['nct_id']} finished enrolling - the readout clock "
+                 f"is running", {"nct_id": r0["nct_id"]})
+
     # ---------------------------------------------------------- capital
     fl = ctx["filings"].get(tk)
     d = det.get("dilution_filing", {})
     if fl is not None and not fl.empty:
         recent = fl[fl["filed_date"] >= pd.Timestamp(today - timedelta(days=int(d.get("days", 30))))]
         if not recent.empty:
-            sev = {"424B5": 1.0, "S-1": 0.85, "S-3": 0.6}
+            sev = {"424B5": 1.0, "424B4": 1.0, "424B3": 0.7, "S-1": 0.85, "S-3": 0.6,
+                   "S-3ASR": 0.6}
             f0 = recent.assign(sev=recent["form"].map(sev).fillna(0.5)).sort_values("sev").iloc[-1]
             fire("dilution_filing", "SELL", float(d.get("strength", 0.5)) * f0["sev"],
                  f"{f0['form']} filed {pd.Timestamp(f0['filed_date']):%b %d} - an offering "
@@ -402,6 +435,15 @@ def event_detectors(tk: str, ctx: dict, feat: pd.DataFrame | None, det: dict,
                  float(q.get("strength", 0.3)) * min(1.3, 0.8 + 0.1 * ns),
                  f"{ns} insiders sold ${vs / 1e6:.1f}M on the open market (60 days)",
                  {"sellers": ns, "value": round(vs)}, family="people")
+
+    ac = ctx.get("activist", {}).get(tk)
+    if ac is not None and not ac.empty:
+        p = det.get("activist_stake", {})
+        r0 = ac.sort_values("filed_date").iloc[-1]
+        fire("activist_stake", "BUY", float(p.get("strength", 0.3)),
+             f"Schedule 13D filed {pd.Timestamp(r0['filed_date']):%b %d} - a holder with 5%+ "
+             f"and intent to influence", {"form": r0["form"], "url": r0.get("url")},
+             family="people")
 
     # ---------------------------------------------------------- specialist funds (13F)
     sm = ctx["smart"].get(tk)
@@ -469,6 +511,28 @@ def event_detectors(tk: str, ctx: dict, feat: pd.DataFrame | None, det: dict,
                      f"Headline tone {'improved' if delta > 0 else 'deteriorated'} by {delta:+.2f} "
                      f"vs the prior three weeks ({len(w7)} headlines this week)",
                      {"delta": round(delta, 3), "n_7d": int(len(w7))}, family="news")
+
+    ev = ctx.get("ai_events", {}).get(tk)
+    if ev is not None and not ev.empty:
+        codes = {o["code"] for o in out}
+        good = {"topline_data", "interim_data", "fda_approval", "adcom_outcome",
+                "partnership_or_licensing", "m_and_a"}
+        bad = {"topline_data", "interim_data", "fda_crl", "trial_halt_or_hold",
+               "trial_discontinued", "adcom_outcome", "financing"}
+        p = det.get("ai_event_positive", {})
+        pos = ev[(ev["outcome"] == "positive") & ev["event_type"].isin(good)]
+        if not pos.empty and "positive_event" not in codes:
+            r0 = pos.sort_values("confidence", ascending=False).iloc[0]
+            fire("ai_event_positive", "BUY", float(p.get("strength", 0.45)) * float(r0["confidence"]),
+                 f"AI-read {str(r0['event_type']).replace('_', ' ')}: {str(r0['summary'])[:110]}",
+                 {"event_type": r0["event_type"], "id": r0["id"]}, family="news")
+        q = det.get("ai_event_negative", {})
+        neg = ev[(ev["outcome"] == "negative") & ev["event_type"].isin(bad)]
+        if not neg.empty and "negative_event" not in codes:
+            r0 = neg.sort_values("confidence", ascending=False).iloc[0]
+            fire("ai_event_negative", "SELL", float(q.get("strength", 0.5)) * float(r0["confidence"]),
+                 f"AI-read {str(r0['event_type']).replace('_', ' ')}: {str(r0['summary'])[:110]}",
+                 {"event_type": r0["event_type"], "id": r0["id"]}, family="news")
 
     # ---------------------------------------------------------- options / shorts
     op = ctx["options"].get(tk)
@@ -575,7 +639,8 @@ def build_context(today: date, cfg) -> dict:
     ctx["type_weights"] = cfg.get("score", "catalyst_type_weights", default={}) or {}
     cut120 = (today - timedelta(days=120)).isoformat()
     fl = _safe("SELECT ticker, form, filed_date, url FROM filings WHERE form IN "
-               "('424B5','S-1','S-3') AND filed_date >= :c", {"c": cut120})
+               "('424B5','424B4','424B3','S-1','S-3','S-3ASR') AND filed_date >= :c",
+               {"c": cut120})
     if not fl.empty:
         fl["filed_date"] = pd.to_datetime(fl["filed_date"], errors="coerce")
     ctx["filings"] = _group(fl)
@@ -633,6 +698,24 @@ def build_context(today: date, cfg) -> dict:
         tr["start_date"] = pd.to_datetime(tr["start_date"], errors="coerce")
         tr = tr[tr["start_date"] <= pd.Timestamp(today)]
     ctx["new_p3"] = _group(tr) if not tr.empty else {}
+    # trial change radar (process/trial_changes.py): the last 45 days of moves
+    tc = _safe("SELECT c.ticker, c.nct_id, c.kind, c.days, c.old, c.new, c.detected_at, "
+               "t.phase FROM trial_changes c LEFT JOIN clinical_trials t ON t.nct_id = c.nct_id "
+               "WHERE c.detected_at >= :c",
+               {"c": (datetime.now(timezone.utc) - timedelta(days=45)).strftime("%Y-%m-%d %H:%M:%S")})
+    if not tc.empty:
+        tc["detected_at"] = pd.to_datetime(tc["detected_at"], utc=True, errors="coerce")
+    ctx["trial_changes"] = _group(tc) if not tc.empty else {}
+    # events read from headlines and filings by the LLM jobs (ai/jobs.py)
+    ev = _safe("SELECT ticker, event_type, outcome, confidence, summary, scored_at, id "
+               "FROM news_llm WHERE kind IN ('news','filing') AND scored_at >= :c "
+               "AND confidence >= 0.75",
+               {"c": (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")})
+    ctx["ai_events"] = _group(ev) if not ev.empty else {}
+    d13 = _safe("SELECT ticker, form, filed_date, url FROM filings WHERE (form LIKE 'SC 13D%' "
+                "OR form LIKE 'SCHEDULE 13D%') AND filed_date >= :c",
+                {"c": (today - timedelta(days=30)).isoformat()})
+    ctx["activist"] = _group(d13) if not d13.empty else {}
     return ctx
 
 

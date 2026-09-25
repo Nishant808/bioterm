@@ -58,7 +58,8 @@ def ingest(
     only: str = typer.Option("", help="comma list: prices,technicals,edgar,fundamentals,"
                                       "clinical,fda,insiders,shortvol,institutions,molecules,"
                                       "options,halts,filingslive,news,sentiment,finbert,pdufa,"
-                                      "ai,catalysts,mollinks,score,signals,backtest"),
+                                      "ai,catalysts,mollinks,score,signals,backtest,"
+                                      "outcomes,landscape,whole13f,drugs,gov,etf"),
     preset: str = typer.Option("", help="'fast' (news+score, frequent cron), 'open' "
                                         "(prices+news+score, the US open) or 'full' "
                                         "(everything, after the close)"),
@@ -109,11 +110,18 @@ def ingest(
             "filingslive": lambda: pipeline.run_job("filings_live", _m("ingest.edgar_live").run),
             "pdufa": lambda: pipeline.run_job("pdufa", _m("ingest.pdufa").run),
             "ai": lambda: pipeline.run_job("ai", _m("ai.jobs").run),
+            "outcomes": lambda: pipeline.run_job("outcomes", _m("process.outcomes").run),
+            "landscape": lambda: pipeline.run_job("landscape", _m("process.landscape").run),
+            "whole13f": lambda: pipeline.run_job("whole13f", _m("ingest.whole13f").run),
+            "drugs": lambda: pipeline.run_job("drugs", _m("ingest.drugs").run),
+            "gov": lambda: pipeline.run_job("gov", _m("ingest.gov").run),
+            "etf": lambda: pipeline.run_job("etf", _m("ingest.etf").run),
         }
         for name in ["prices", "technicals", "edgar", "fundamentals", "clinical",
                      "fda", "insiders", "shortvol", "institutions", "molecules", "options",
                      "halts", "filingslive", "news", "sentiment", "finbert", "pdufa", "ai",
-                     "catalysts", "mollinks", "score", "signals", "backtest"]:
+                     "catalysts", "mollinks", "score", "signals", "backtest", "outcomes",
+                     "landscape", "whole13f", "drugs", "gov", "etf"]:
             if name in wanted:
                 console.rule(name)
                 console.print(jobmap[name]())

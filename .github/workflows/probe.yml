@@ -74,6 +74,8 @@ jobs:
           uv run bioterm pulse --no-deliver
       - name: Derived
         run: uv run bioterm ingest --only catalysts,mollinks,score,signals,backtest,insiders
+      - name: Research (outcomes, landscape, 13F data sets, drugs, gov, ETF flows)
+        run: uv run bioterm ingest --only outcomes,landscape,whole13f,drugs,gov,etf
       - name: Report
         if: always()
         run: |
@@ -123,6 +125,16 @@ jobs:
           q("pdufa/adcom extracted", "SELECT id, kind, ticker, pdufa_date, adcom_date, drug, confidence, substr(summary, 1, 90) AS summary FROM news_llm ORDER BY scored_at DESC LIMIT 20")
           q("regulatory catalysts", "SELECT ticker, type, date, source, substr(title, 1, 80) AS title FROM catalysts WHERE type IN ('pdufa','adcom') ORDER BY date LIMIT 20")
           q("app meta (pulse)", "SELECT key, substr(value, 1, 400) AS value FROM app_meta WHERE key IN ('worker_state','movers_live')")
+          q("trial changes", "SELECT kind, COUNT(*) AS n FROM trial_changes GROUP BY kind")
+          q("catalyst events", "SELECT kind, direction, source, COUNT(*) AS n, AVG(ret_1d) AS avg_reaction FROM catalyst_events GROUP BY kind, direction, source")
+          q("outcome base rates", "SELECT substr(results, 1, 1500) AS r FROM backtests WHERE kind = 'outcomes'")
+          q("landscape", "SELECT condition, COUNT(*) AS n, COUNT(sponsor_ticker) AS universe FROM landscape_trials GROUP BY condition ORDER BY n DESC LIMIT 15")
+          q("whole-market 13F", "SELECT ticker, period, holders, holders_prev, new_holders, exited_holders, value/1e6 AS value_m FROM inst_ownership ORDER BY value DESC LIMIT 15")
+          q("LOE calendar", "SELECT ticker, trade_name, appl_no, approval_date, patent_expiry, exclusivity_expiry, loe_date FROM loe_calendar ORDER BY loe_date LIMIT 20")
+          q("FAERS", "SELECT brand, ticker, quarter, reports FROM faers_counts ORDER BY brand, quarter DESC LIMIT 20")
+          q("gov awards", "SELECT ticker, agency, sub_agency, amount, start_date, award_type FROM gov_awards ORDER BY amount DESC LIMIT 15")
+          q("ETF flows", "SELECT etf, date, nav, shares_out, aum/1e6 AS aum_m, flow_est/1e6 AS flow_m FROM etf_flows ORDER BY date DESC LIMIT 10")
+          q("fundamentals overhang", "SELECT ticker, shares_out, xbrl_shares_out, warrants_out, options_out, total_debt FROM fundamentals WHERE warrants_out IS NOT NULL OR total_debt IS NOT NULL LIMIT 15")
           try:
               from bioterm.process import backtest as bt
               from bioterm.process import smart_money as sm
@@ -165,7 +177,7 @@ jobs:
           from streamlit.testing.v1 import AppTest
           pages = ["overview", "signals", "focus", "stock", "smart_money", "molecules",
                    "backtest", "catalysts", "news", "watchlist", "compare", "alerts",
-                   "portfolio", "market", "copilot", "settings", "health"]
+                   "portfolio", "market", "copilot", "settings", "health", "screener"]
           bad = 0
           for page in pages:
               at = AppTest.from_file("dashboard/Home.py", default_timeout=120)
@@ -177,4 +189,18 @@ jobs:
               bad += bool(errs)
               print(f"{page:12s} {'FAIL ' + str(errs)[:600] if errs else 'ok'}")
           sys.exit(1 if bad else 0)
+          EOF
+      - name: Summary (tail of the log)
+        if: always()
+        run: |
+          uv run python - <<'EOF'
+          from bioterm.db import read_sql
+          for t in ["halts", "filings", "news", "news_llm", "catalysts", "trial_changes",
+                    "catalyst_events", "landscape_trials", "inst_ownership", "loe_calendar",
+                    "faers_counts", "gov_awards", "etf_flows", "signal_scores"]:
+              try:
+                  print(f"{t:18s}", int(read_sql(f"SELECT COUNT(*) AS n FROM {t}").iloc[0]["n"]))
+              except Exception as e:
+                  print(t, "ERR", e)
+          print(read_sql("SELECT job, status, rows, substr(detail, 1, 300) AS detail FROM ingest_runs ORDER BY id").to_string(index=False))
           EOF

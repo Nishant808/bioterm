@@ -119,7 +119,8 @@ def _latest_instant(units: list[dict]) -> float | None:
 
 
 def company_facts(cik10: str) -> dict:
-    """Return {cash, rd_expense_ttm, net_income_ttm} from XBRL facts (USD)."""
+    """Return {cash, rd_expense_ttm, net_income_ttm, op_cash_flow_ttm} (USD) plus
+    the dilution overhang (shares out, warrants, options) and debt from XBRL facts."""
     try:
         data = get_json(FACTS_URL.format(cik10=cik10), min_interval=_MIN_INTERVAL)
     except Exception as exc:  # noqa: BLE001
@@ -152,11 +153,31 @@ def company_facts(cik10: str) -> dict:
             "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
         )
     )
+    def shares_for(*tags: str, ns: str = "us-gaap") -> list[dict]:
+        node_ns = data.get("facts", {}).get(ns, {})
+        for t in tags:
+            node = node_ns.get(t)
+            if node and "units" in node and "shares" in node["units"]:
+                return node["units"]["shares"]
+        return []
+
+    # dilution overhang (session 10): shares out, warrants, options, debt
+    shares = _latest_instant(shares_for("EntityCommonStockSharesOutstanding", ns="dei"))
+    warrants = _latest_instant(shares_for("ClassOfWarrantOrRightOutstanding"))
+    options = _latest_instant(shares_for(
+        "ShareBasedCompensationArrangementByShareBasedPaymentAwardOptionsOutstandingNumber"))
+    debt = _latest_instant(units_for("LongTermDebt", "LongTermDebtNoncurrent",
+                                     "ConvertibleNotesPayable", "DebtInstrumentCarryingAmount",
+                                     "LongTermNotesPayable"))
     return {
         "cash": cash,
         "rd_expense_ttm": rd,
         "net_income_ttm": ni,
         "op_cash_flow_ttm": ocf,
+        "xbrl_shares_out": shares,
+        "warrants_out": warrants,
+        "options_out": options,
+        "total_debt": debt,
     }
 
 
@@ -172,7 +193,7 @@ def recent_filings(cik10: str, ticker: str, forms: list[str]) -> list[dict]:
     df = pd.DataFrame(recent)
     if df.empty or "form" not in df:
         return []
-    df = df[df["form"].isin(forms)].head(60)
+    df = df[df["form"].isin(forms)].head(150)
     now = datetime.now(timezone.utc)
     rows = []
     for _, r in df.iterrows():
@@ -196,6 +217,7 @@ def recent_filings(cik10: str, ticker: str, forms: list[str]) -> list[dict]:
                 "items": str(r.get("items", "") or ""),
                 "url": url,
                 "fetched_at": now,
+                "source": "submissions",
             }
         )
     return rows

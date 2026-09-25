@@ -202,6 +202,7 @@ def run(tickers: list[str] | None = None) -> dict:
     name_by_ticker = dict(zip(secs["ticker"], secs["name"])) if not secs.empty else {}
 
     rows: list[dict] = []
+    every: list[dict] = []          # all parsed records, kept or not - for the change radar
     processed: list[str] = []
     for tk in tickers:
         if len(processed) >= max_sponsors:
@@ -217,8 +218,10 @@ def run(tickers: list[str] | None = None) -> dict:
         processed.append(tk)
         for st in studies:
             parsed = _parse(st, tk)
-            if parsed and _keep(parsed):
-                rows.append(parsed)
+            if parsed:
+                every.append(parsed)
+                if _keep(parsed):
+                    rows.append(parsed)
 
     # de-dup: a trial can match two tickers (collab); keep first occurrence
     seen: set[str] = set()
@@ -228,6 +231,16 @@ def run(tickers: list[str] | None = None) -> dict:
             continue
         seen.add(r["nct_id"])
         deduped.append(r)
+
+    # the change radar diffs against what's stored *before* this run touches it -
+    # a trial that just stopped (and is about to be dropped below) is the headline
+    n_changes = 0
+    try:
+        from ..process.trial_changes import record
+
+        n_changes = record(every)
+    except Exception as exc:  # noqa: BLE001 - the radar must never break the ingest
+        log.warning("trial change radar failed: %s", exc)
 
     # drop trials we previously stored for these sponsors that no longer qualify
     # (status changed, or now filtered as a non-catalyst clin-pharm study)
@@ -250,7 +263,7 @@ def run(tickers: list[str] | None = None) -> dict:
     n = bulk_upsert(clinical_trials, deduped)
     log.info("clinical: %d trials across %d sponsors (%d stale removed)",
              n, len(processed), len(stale) if processed else 0)
-    return {"rows": n, "sponsors": len(processed)}
+    return {"rows": n, "sponsors": len(processed), "changes": n_changes}
 
 
 def _date(s):

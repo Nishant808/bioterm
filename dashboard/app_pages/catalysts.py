@@ -65,10 +65,125 @@ with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
                         st.cache_data.clear()
                         st.rerun()
 
+def _intel() -> None:
+    """Catalyst intelligence that doesn't depend on the filters above: base rates
+    from past events, options-implied vs realized moves, the trial change radar
+    and the industry calendar."""
+    from _shared import backtest_result, q
+
+    t_rates, t_iv, t_radar, t_ind = st.tabs([
+        ":material/insights: Base rates", ":material/compare_arrows: Implied vs realized",
+        ":material/radar: Trial change radar", ":material/event_note: Industry calendar"])
+    with t_rates:
+        res = backtest_result("outcomes")
+        groups = pd.DataFrame((res or {}).get("groups") or [])
+        if groups.empty:
+            empty_state("No past events measured yet",
+                        "The full refresh builds the outcome database from FDA approvals, "
+                        "AI-read headlines and three years of topline 8-Ks.", "insights")
+        else:
+            st.caption(f"{res.get('n', 0)} past catalysts with prices around them. Reaction = "
+                       "2-session move; run-up = the 60 sessions before. 'Sold the news' = "
+                       "share of events after a 30%+ run-up that fell on the day.")
+            st.dataframe(groups[["kind", "direction", "n", "tickers", "pre60_median",
+                                 "reaction_median", "reaction_abs_median",
+                                 "reaction_down_share", "d21_median", "runup_n",
+                                 "runup_then_down_share"]], hide_index=True, width="stretch",
+                         column_config={
+                             "kind": "Event", "direction": "Read", "n": "Events",
+                             "tickers": "Names",
+                             "pre60_median": st.column_config.NumberColumn(
+                                 "Median run-up", format="percent"),
+                             "reaction_median": st.column_config.NumberColumn(
+                                 "Median reaction", format="percent"),
+                             "reaction_abs_median": st.column_config.NumberColumn(
+                                 "Median |reaction|", format="percent"),
+                             "reaction_down_share": st.column_config.ProgressColumn(
+                                 "Fell on the day", min_value=0, max_value=1,
+                                 format="percent"),
+                             "d21_median": st.column_config.NumberColumn(
+                                 "1 month after", format="percent"),
+                             "runup_n": "Run-ups 30%+",
+                             "runup_then_down_share": st.column_config.ProgressColumn(
+                                 "Sold the news", min_value=0, max_value=1,
+                                 format="percent")})
+    with t_iv:
+        try:
+            from bioterm.process.outcomes import implied_vs_realized
+
+            ivr = implied_vs_realized(90)
+        except Exception:  # noqa: BLE001
+            ivr = pd.DataFrame()
+        if ivr.empty:
+            empty_state("No binary catalysts in the next 90 days", "", "event_busy")
+        else:
+            st.caption("Options-implied move to each binary event (ATM straddle to the "
+                       "expiry covering it, else back-month IV scaled) next to the moves this "
+                       "name and same-size peers made on past events. Ratio > 1: options price "
+                       "a bigger move than history.")
+            st.dataframe(ivr[["date", "ticker", "type", "implied_move", "own_median_move",
+                              "peer_median_move", "implied_vs_history", "title"]],
+                         hide_index=True, width="stretch", column_config={
+                             "date": st.column_config.DateColumn("Date", format="MMM D"),
+                             "type": st.column_config.TextColumn("Type"),
+                             "implied_move": st.column_config.NumberColumn(
+                                 "Implied ±", format="percent"),
+                             "own_median_move": st.column_config.NumberColumn(
+                                 "Own past |move|", format="percent"),
+                             "peer_median_move": st.column_config.NumberColumn(
+                                 "Peers |move|", format="percent"),
+                             "implied_vs_history": st.column_config.NumberColumn(
+                                 "Implied ÷ history", format="%.2f"),
+                             "title": st.column_config.TextColumn("Catalyst",
+                                                                  width="large")})
+    with t_radar:
+        ch = q("SELECT c.detected_at, c.ticker, c.nct_id, c.kind, c.old, c.new, t.phase "
+               "FROM trial_changes c LEFT JOIN clinical_trials t ON t.nct_id = c.nct_id "
+               "ORDER BY c.detected_at DESC LIMIT 200")
+        if ch.empty:
+            empty_state("No trial changes detected yet",
+                        "Each refresh diffs ClinicalTrials.gov against the last one - date "
+                        "slips, enrollment complete, suspensions.", "radar")
+        else:
+            kinds = sorted(ch["kind"].unique())
+            pick = st.pills("Change", kinds, selection_mode="multi", default=kinds,
+                            format_func=lambda k: k.replace("_", " "), key="radar_kinds")
+            ch = ch[ch["kind"].isin(pick or [])]
+            st.dataframe(ch.assign(kind=ch["kind"].str.replace("_", " ")), hide_index=True,
+                         width="stretch", column_config={
+                             "detected_at": st.column_config.DatetimeColumn(
+                                 "Detected", format="MMM D"),
+                             "ticker": "Ticker", "nct_id": "Trial", "kind": "Change",
+                             "old": "From", "new": "To", "phase": "Phase"})
+    with t_ind:
+        from bioterm.process.industry_calendar import events, presenters
+
+        ev = events(365)
+        if ev.empty:
+            empty_state("No industry events on file", "Add them to config/events.yml.",
+                        "event_note")
+        else:
+            ev["presenters"] = ev["area"].map(lambda a: len(presenters(a))
+                                              if isinstance(a, list) else None)
+            ev["when"] = [f"{a:%b %d}" + (f" – {b:%b %d, %Y}" if b != a else f", {a:%Y}")
+                          for a, b in zip(ev["start"], ev["end"])]
+            st.caption("Medical meetings where data moves stocks, and EMA CHMP weeks (EU "
+                       "opinions publish on the Friday). 'Names' = universe companies with "
+                       "Phase 2/3 programmes in the meeting's areas.")
+            st.dataframe(ev[["when", "name", "kind", "where", "presenters", "url"]],
+                         hide_index=True, width="stretch", column_config={
+                             "when": "Dates", "name": st.column_config.TextColumn(
+                                 "Event", width="large"), "kind": "Type",
+                             "where": "Where", "presenters": "Names",
+                             "url": st.column_config.LinkColumn("Site",
+                                                                display_text="Open")})
+
+
 if cats.empty:
     empty_state("No catalysts derived yet",
                 "They're built from trial completion dates, news and earnings on each "
                 "refresh.", "event_busy")
+    _intel()
     st.stop()
 
 scores = scores_df()[["ticker", "focus_score", "rank", "is_watchlist"]]
@@ -84,6 +199,7 @@ view = view.sort_values("date")
 if view.empty:
     empty_state("No catalysts match these filters",
                 "Widen the horizon or select more families.", "filter_alt_off")
+    _intel()
     st.stop()
 
 # ------------------------------------------------------------------ summary
@@ -171,3 +287,6 @@ with tab_co:
     fig.update_layout(**plotly_layout(height=max(320, 19 * len(order) + 80)))
     st.caption("One row per company, ordered by its next catalyst. Marker size = Focus Score.")
     chart(fig, key="timeline")
+
+with card("Catalyst intelligence", icon_name="psychology_alt"):
+    _intel()

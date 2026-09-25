@@ -2,6 +2,8 @@
 news sentiment, insiders and filings."""
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -18,7 +20,8 @@ from _shared import (catalysts_df, filings_df, fundamentals_row, insider_txns_df
 from _ui import (ACCENT, BORDER_STRONG, CATALYST_TYPES, FAMILIES, GRID, MUTED, NEG,
                  PHASE_COLORS, POS, SMA_COLORS, WARN, card, catalyst_family, catalyst_label,
                  catalyst_title, chart, display_name, empty_state, esc, headline_rows,
-                 kpi_row, md_safe, page_header, phase_group, plotly_layout, regime_word,
+                 kpi_row, kv_list, md_safe, page_header, phase_group, plotly_layout,
+                 regime_word,
                  signal_badge, signal_rows, spark, tone_of)
 from bioterm import store
 
@@ -157,11 +160,13 @@ with notes_col:
                 st.toast("Note saved", icon=":material/check_circle:")
 
 # ------------------------------------------------------------------ tabs
-tab_sig, tab_px, tab_pipe, tab_cat, tab_news, tab_ins, tab_flow, tab_fil = st.tabs([
+(tab_sig, tab_px, tab_pipe, tab_cat, tab_news, tab_ins, tab_flow, tab_bs,
+ tab_fil) = st.tabs([
     ":material/swap_vert: Signals", ":material/candlestick_chart: Price & technicals",
     ":material/biotech: Pipeline", ":material/event: Catalysts",
     ":material/newspaper: News & sentiment", ":material/groups: Insiders",
-    ":material/account_balance: Funds & flow", ":material/description: SEC filings"])
+    ":material/account_balance: Funds & flow", ":material/savings: Balance sheet",
+    ":material/description: SEC filings"])
 
 # ---- signals
 with tab_sig:
@@ -374,8 +379,12 @@ with tab_pipe:
                        "The vertical line is today.")
             chart(fig, key="gantt")
 
+        from bioterm.process.pos import area_of, loa
+
+        tr = tr.assign(area=tr["conditions"].map(area_of),
+                       pos=[loa(p, c) for p, c in zip(tr["phase"], tr["conditions"])])
         st.dataframe(
-            tr[["url", "phase", "status", "title", "conditions", "interventions",
+            tr[["url", "phase", "pos", "status", "title", "conditions", "interventions",
                 "primary_completion_date", "enrollment", "last_update_post_date"]]
             .sort_values("primary_completion_date"),
             hide_index=True,
@@ -383,6 +392,10 @@ with tab_pipe:
                 "url": st.column_config.LinkColumn("Trial", display_text=r"(NCT\d+)",
                                                    width=110),
                 "phase": st.column_config.TextColumn("Phase", width=70),
+                "pos": st.column_config.ProgressColumn(
+                    "Approval prior", min_value=0, max_value=1, format="percent", width=110,
+                    help="Historical likelihood of approval from this phase in this disease "
+                         "area (BIO/Informa/QLS 2011-2020) - a base rate, not a forecast"),
                 "status": st.column_config.TextColumn("Status", width=150),
                 "title": st.column_config.TextColumn("Title", width="large"),
                 "conditions": st.column_config.TextColumn("Conditions"),
@@ -393,6 +406,46 @@ with tab_pipe:
                 "last_update_post_date": st.column_config.DateColumn(
                     "Last update", format="MMM D, YYYY"),
             })
+
+    ch = q("SELECT detected_at, nct_id, kind, old, new FROM trial_changes WHERE ticker = :t "
+           "ORDER BY detected_at DESC LIMIT 20", {"t": ticker})
+    if not ch.empty:
+        with card("Trial change radar", icon_name="radar",
+                  meta="what moved on ClinicalTrials.gov between refreshes"):
+            st.dataframe(ch.assign(kind=ch["kind"].str.replace("_", " ")), hide_index=True,
+                         width="stretch", column_config={
+                             "detected_at": st.column_config.DatetimeColumn(
+                                 "Detected", format="MMM D, YYYY"),
+                             "nct_id": "Trial", "kind": "Change", "old": "From", "new": "To"})
+
+    from bioterm.process.landscape import peers as _peers, universe_conditions
+
+    _conds = universe_conditions()
+    pr = _peers(ticker, _conds)
+    mine = sorted(set(_conds[_conds["ticker"] == ticker]["condition"]))[:30]
+    lt = q("SELECT condition, sponsor, sponsor_ticker, phase, status, primary_completion_date, "
+           "nct_id, title FROM landscape_trials WHERE condition IN "
+           f"({','.join(f':c{i}' for i in range(len(mine)))}) "
+           "ORDER BY primary_completion_date LIMIT 300",
+           {f"c{i}": c for i, c in enumerate(mine)}) if mine else pd.DataFrame()
+    if pr or not lt.empty:
+        with card("Competitive landscape", icon_name="hub",
+                  meta="other Phase 2/3 programmes in the same indications"):
+            if pr:
+                st.caption("Universe names in the same indications (a peer's readout "
+                           "reprices these - read-through alerts watch for it):")
+                st.markdown(" · ".join(f"**{t}** ({', '.join(c[:2])})"
+                                       for t, c in list(pr.items())[:12]))
+            if not lt.empty:
+                st.dataframe(lt.drop_duplicates("nct_id").head(60), hide_index=True,
+                             width="stretch", column_config={
+                                 "condition": "Indication", "sponsor": "Sponsor",
+                                 "sponsor_ticker": "Ticker", "phase": "Phase",
+                                 "status": "Status",
+                                 "primary_completion_date": st.column_config.DateColumn(
+                                     "Primary completion", format="MMM YYYY"),
+                                 "nct_id": "Trial", "title": st.column_config.TextColumn(
+                                     "Title", width="large")})
 
 # ---- catalysts
 with tab_cat:
@@ -416,6 +469,44 @@ with tab_cat:
                 "source": st.column_config.TextColumn("Source"),
                 "url": st.column_config.LinkColumn("Link", display_text="Open"),
             })
+
+    past = q("SELECT event_date, kind, direction, ret_pre60, ret_1d, ret_21d, title, url "
+             "FROM catalyst_events WHERE ticker = :t AND ret_1d IS NOT NULL "
+             "ORDER BY event_date DESC LIMIT 30", {"t": ticker})
+    try:
+        from bioterm.process.outcomes import implied_vs_realized
+
+        ivr = implied_vs_realized(120)
+        ivr = ivr[ivr["ticker"] == ticker] if not ivr.empty else ivr
+    except Exception:  # noqa: BLE001
+        ivr = pd.DataFrame()
+    if not ivr.empty and ivr["implied_move"].notna().any():
+        with card("Options-implied vs historical moves", icon_name="compare_arrows",
+                  meta="implied = ATM straddle to expiry (or back-month IV scaled to the date)"):
+            st.dataframe(ivr[["date", "type", "implied_move", "own_median_move", "own_events",
+                              "peer_median_move", "peer_events"]], hide_index=True,
+                         width="stretch", column_config={
+                             "date": st.column_config.DateColumn("Event", format="MMM D"),
+                             "type": "Type",
+                             "implied_move": st.column_config.NumberColumn(
+                                 "Implied ±", format="percent"),
+                             "own_median_move": st.column_config.NumberColumn(
+                                 "This name's past |move|", format="percent"),
+                             "own_events": "n",
+                             "peer_median_move": st.column_config.NumberColumn(
+                                 "Same-size peers |move|", format="percent"),
+                             "peer_events": "n (peers)"})
+    if not past.empty:
+        with card("Past catalysts and how the stock reacted", icon_name="history",
+                  meta="reaction = 2-session move; run-up = 60 sessions before"):
+            st.dataframe(past, hide_index=True, width="stretch", column_config={
+                "event_date": st.column_config.DateColumn("Date", format="MMM D, YYYY"),
+                "kind": "Event", "direction": "Read",
+                "ret_pre60": st.column_config.NumberColumn("Run-up", format="percent"),
+                "ret_1d": st.column_config.NumberColumn("Reaction", format="percent"),
+                "ret_21d": st.column_config.NumberColumn("1 month after", format="percent"),
+                "title": st.column_config.TextColumn("Detail", width="large"),
+                "url": st.column_config.LinkColumn("Source", display_text="Open")})
 
     with st.expander("Pin a catalyst you know about", icon=":material/push_pin:",
                      expanded=cat.empty):
@@ -609,6 +700,120 @@ with tab_flow:
                 chart(fig, key="short_series")
 
 # ---- filings
+with tab_bs:
+    from bioterm import screener as _scr
+    from bioterm.process.valuation import sotp
+
+    try:
+        _row = _scr.frame().set_index("ticker")
+        me = _row.loc[ticker] if ticker in _row.index else None
+    except Exception:  # noqa: BLE001
+        me = None
+    if me is not None:
+        with kpi_row(4, "bs"):
+            ev = me.get("ev")
+            st.metric("Enterprise value", money(ev), border=True,
+                      delta="below net cash" if me.get("below_cash") else None,
+                      delta_color="off", delta_arrow="off",
+                      help="Market cap - cash + debt (XBRL)")
+            st.metric("Dilution risk", f"{float(me['dilution_risk']):.2f}", border=True,
+                      help="Screen 0-1: short runway, an active shelf, a recent raise, "
+                           "warrant/option overhang, insiders' Form 144s")
+            wo = me.get("warrant_overhang")
+            st.metric("Warrant overhang", "–" if wo is None or pd.isna(wo) else f"{wo:.1%}",
+                      border=True, help="Warrants outstanding / shares (XBRL)")
+            st.metric("Takeout profile", f"{float(me['takeout_score']):.2f}", border=True,
+                      help="Screen 0-1 (bioterm/screener.py) - not a prediction")
+        flags = []
+        if me.get("shelf_active"):
+            flags.append("an S-3 shelf is on file (3 years)")
+        if me.get("raised_90d"):
+            flags.append("a 424B prospectus supplement in the last 90 days")
+        if (me.get("form144_90d") or 0) > 0:
+            flags.append(f"{int(me['form144_90d'])} Form 144 filings (insider sale notices) "
+                         "in 90 days")
+        if flags:
+            st.caption("Dilution radar: " + "; ".join(flags) + ".")
+    sp = sotp(ticker)
+    if sp:
+        with card("Sum of the parts", icon_name="calculate",
+                  meta="your rNPV inputs (Molecules page) + cash - debt"):
+            parts = pd.DataFrame(sp["parts"])
+            st.dataframe(parts, hide_index=True, width="stretch", column_config={
+                "molecule": "Molecule",
+                "rnpv": st.column_config.NumberColumn("rNPV", format="compact"),
+                "pos": st.column_config.NumberColumn("PoS", format="percent"),
+                "peak_sales": st.column_config.NumberColumn("Peak sales", format="compact")})
+            kv_list([("Pipeline rNPV", money(sum(p["rnpv"] for p in sp["parts"])), None),
+                     ("Cash - debt", money(sp["cash"] - sp["debt"]), None),
+                     ("Equity value", money(sp["equity_value"]), None),
+                     ("Per share", f"${sp['per_share']:,.2f}" if sp["per_share"] else "–",
+                      None),
+                     ("Market cap", money(sp["market_cap"]), None)])
+    loe = q("SELECT trade_name, ingredient, appl_no, approval_date, patent_expiry, "
+            "exclusivity_expiry, loe_date FROM loe_calendar WHERE ticker = :t "
+            "ORDER BY loe_date", {"t": ticker})
+    if not loe.empty:
+        with card("Marketed drugs and loss of exclusivity", icon_name="medication",
+                  meta="FDA Orange Book (BLAs: approval + 12 years, estimated)"):
+            st.dataframe(loe, hide_index=True, width="stretch", column_config={
+                "trade_name": "Brand", "ingredient": "Ingredient", "appl_no": "Application",
+                "approval_date": st.column_config.DateColumn("Approved", format="MMM YYYY"),
+                "patent_expiry": st.column_config.DateColumn("Last patent", format="MMM YYYY"),
+                "exclusivity_expiry": st.column_config.DateColumn("Exclusivity",
+                                                                  format="MMM YYYY"),
+                "loe_date": st.column_config.DateColumn("LOE", format="MMM YYYY")})
+            fa = q("SELECT brand, quarter, reports FROM faers_counts WHERE ticker = :t "
+                   "ORDER BY quarter", {"t": ticker})
+            if not fa.empty:
+                st.caption("FDA adverse-event reports per quarter (FAERS) - rising counts "
+                           "after launch track uptake")
+                st.bar_chart(fa, x="quarter", y="reports", color="brand", height=180,
+                             x_label="", y_label="reports")
+    ga = q("SELECT agency, sub_agency, amount, start_date, end_date, award_type, description, "
+           "url FROM gov_awards WHERE ticker = :t ORDER BY amount DESC", {"t": ticker})
+    if not ga.empty:
+        with card("Government awards", icon_name="account_balance",
+                  meta="USAspending.gov · contracts and grants, 5 years"):
+            st.dataframe(ga, hide_index=True, width="stretch", column_config={
+                "amount": st.column_config.NumberColumn("Amount", format="compact"),
+                "start_date": st.column_config.DateColumn("Start", format="MMM YYYY"),
+                "end_date": st.column_config.DateColumn("End", format="MMM YYYY"),
+                "description": st.column_config.TextColumn("Description", width="large"),
+                "url": st.column_config.LinkColumn("", display_text="Open")})
+    d13 = q("SELECT form, filed_date, url FROM filings WHERE ticker = :t AND (form LIKE 'SC 13%' "
+            "OR form LIKE 'SCHEDULE 13%') ORDER BY filed_date DESC LIMIT 20", {"t": ticker})
+    io13 = q("SELECT period, holders, holders_prev, new_holders, exited_holders, shares, value, "
+             "top_holders FROM inst_ownership WHERE ticker = :t ORDER BY period DESC LIMIT 1",
+             {"t": ticker})
+    if not io13.empty or not d13.empty:
+        with card("Ownership filings", icon_name="groups",
+                  meta="all 13F filers · Schedule 13D (activist) / 13G (passive 5%+)"):
+            if not io13.empty:
+                r0 = io13.iloc[0]
+                hp = r0["holders_prev"]
+                st.markdown(f"**{int(r0['holders'])} institutions** held it at "
+                            f"{pd.Timestamp(r0['period']):%b %d, %Y}"
+                            + (f" ({int(r0['holders']) - int(hp):+d} vs the prior quarter: "
+                               f"{int(r0['new_holders'] or 0)} new, "
+                               f"{int(r0['exited_holders'] or 0)} exited)" if pd.notna(hp)
+                               else ""))
+                top = pd.DataFrame(json.loads(r0["top_holders"] or "[]"))
+                if not top.empty:
+                    st.dataframe(top, hide_index=True, width="stretch", column_config={
+                        "name": "Holder", "shares": st.column_config.NumberColumn(
+                            "Shares", format="compact"),
+                        "value": st.column_config.NumberColumn("Value", format="compact"),
+                        "change": "Change vs prior quarter"})
+            if not d13.empty:
+                st.dataframe(d13, hide_index=True, width="stretch", column_config={
+                    "form": "Form", "filed_date": st.column_config.DateColumn(
+                        "Filed", format="MMM D, YYYY"),
+                    "url": st.column_config.LinkColumn("Document", display_text="Open")})
+    if me is None and not sp and loe.empty and ga.empty and d13.empty and io13.empty:
+        empty_state("No balance-sheet data yet", "Fundamentals arrive with the next full "
+                    "refresh.", "savings")
+
 with tab_fil:
     try:
         gc = q("SELECT form, filed_date, going_concern FROM filing_risk_flags "

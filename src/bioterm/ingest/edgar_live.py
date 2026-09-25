@@ -25,7 +25,8 @@ log = logging.getLogger("bioterm.ingest.edgar_live")
 
 FEED = ("https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type={form}&company="
         "&dateb=&owner=include&start=0&count={count}&output=atom")
-FORMS = ["8-K", "6-K", "424B", "S-3", "SC 13D", "SC 13G", "SCHEDULE 13D", "SCHEDULE 13G"]
+# the feed's type filter is a prefix match: "SC 13" covers SC 13D/13G (+ /A)
+FORMS = ["8-K", "6-K", "424B", "S-3", "SC 13", "SCHEDULE 13"]
 ATOM = {"a": "http://www.w3.org/2005/Atom"}
 
 _TITLE = re.compile(r"^(?P<form>.+?) - (?P<name>.+) \((?P<cik>\d{4,10})\) \((?P<role>[^)]+)\)")
@@ -105,7 +106,7 @@ def run(forms: list[str] | None = None, count: int = 100) -> dict[str, Any]:
     for form in forms or FORMS:
         try:
             raw = get_bytes(FEED.format(form=form.replace(" ", "+"), count=count),
-                            min_interval=0.2, retries=2, timeout=20)
+                            min_interval=0.2, retries=1, timeout=25)
         except Exception as exc:  # noqa: BLE001 - one form type failing is fine
             log.warning("edgar live %s failed: %s", form, exc)
             continue

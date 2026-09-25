@@ -1,0 +1,38 @@
+# Probability-of-success priors for clinical programmes.
+#
+# Source: BIO, Informa Pharma Intelligence and QLS Advisors, "Clinical Development
+# Success Rates 2011-2020" (February 2021), https://go.bio.org/rs/490-EHZ-999/images/
+# ClinicalDevelopmentSuccessRates2011_2020.pdf - 12,728 phase transitions across
+# 9,704 programmes. Figures are percentages as printed in the report.
+#
+# phase_transition: chance of advancing out of each phase (all indications).
+# loa: likelihood of approval from each stage, by disease area (Figure / table
+#      "Likelihood of Approval by disease area"). BioTerm maps a trial's
+#      conditions onto these areas with keyword rules (process/pos.py) - a coarse
+#      prior for screening and the rNPV defaults, not a forecast for any one drug.
+
+source: "BIO / Informa / QLS, Clinical Development Success Rates 2011-2020 (2021)"
+
+phase_transition:
+  p1_to_p2: 52.0
+  p2_to_p3: 28.9
+  p3_to_filing: 57.8
+  filing_to_approval: 90.6
+
+loa:             #  from P1   from P2   from P3   from NDA/BLA
+  all:            [7.9,      15.1,     52.4,     90.6]
+  hematology:     [23.9,     34.4,     71.5,     93.1]
+  metabolic:      [15.5,     25.0,     55.7,     87.5]
+  infectious:     [13.2,     22.8,     59.4,     92.9]
+  other:          [13.0,     20.5,     53.0,     88.4]
+  ophthalmology:  [11.9,     16.6,     46.7,     91.1]
+  autoimmune:     [10.7,     19.3,     61.4,     94.1]
+  allergy:        [10.3,     18.3,     64.7,     100.0]
+  gastroenterology: [8.3,    17.8,     51.9,     90.9]
+  respiratory:    [7.5,      13.5,     61.6,     95.6]
+  psychiatry:     [7.3,      13.8,     51.4,     91.2]
+  endocrine:      [6.6,      15.2,     57.1,     86.3]
+  neurology:      [5.9,      12.3,     46.0,     86.7]
+  oncology:       [5.3,      10.8,     43.9,     92.0]
+  cardiovascular: [4.8,      9.6,      45.6,     82.5]
+  urology:        [3.6,      8.8,      58.6,     84.6]

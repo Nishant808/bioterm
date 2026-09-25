@@ -1,0 +1,39 @@
+# Industry calendar: medical meetings where data moves stocks, and EMA CHMP
+# meetings (EU approval opinions come out on the Friday of each meeting week).
+# Every date below was checked against the organiser's own site on 2026-09-25
+# (EMA's published CHMP schedules for 2026 and 2027-2028). Add rows freely -
+# the Catalysts page shows everything in the next 12 months.
+#
+# area: the disease areas whose companies typically present (config/pos_priors.yml
+#       names) - used to point at universe names with programmes in that area.
+
+events:
+  - {name: "ESMO Congress 2026", start: 2026-10-23, end: 2026-10-27, where: "Madrid",
+     kind: conference, area: [oncology], url: "https://www.esmo.org/meeting-calendar/esmo-congress-2026"}
+  - {name: "SITC 2026 Annual Meeting", start: 2026-11-04, end: 2026-11-08, where: "Phoenix",
+     kind: conference, area: [oncology], url: "https://www.sitcancer.org/2026/home"}
+  - {name: "The Liver Meeting 2026 (AASLD)", start: 2026-11-05, end: 2026-11-09, where: "Denver",
+     kind: conference, area: [metabolic, gastroenterology, infectious], url: "https://www.aasld.org/tlm-26/home"}
+  - {name: "ACR Convergence 2026", start: 2026-11-06, end: 2026-11-11, where: "Orlando",
+     kind: conference, area: [autoimmune], url: "https://rheumatology.org/meetings/acr-convergence"}
+  - {name: "San Antonio Breast Cancer Symposium 2026", start: 2026-12-08, end: 2026-12-11,
+     where: "San Antonio", kind: conference, area: [oncology], url: "https://sabcs.org/"}
+  - {name: "ASH Annual Meeting 2026", start: 2026-12-12, end: 2026-12-15, where: "New Orleans",
+     kind: conference, area: [hematology, oncology], url: "https://www.hematology.org/meetings/annual-meeting"}
+
+  # EMA Committee for Medicinal Products for Human Use - monthly opinions
+  - {name: "CHMP meeting", start: 2026-10-12, end: 2026-10-15, kind: chmp, url: "https://www.ema.europa.eu/en/committees/committee-medicinal-products-human-use-chmp"}
+  - {name: "CHMP meeting", start: 2026-11-09, end: 2026-11-12, kind: chmp}
+  - {name: "CHMP meeting", start: 2026-12-07, end: 2026-12-10, kind: chmp}
+  - {name: "CHMP meeting", start: 2027-01-25, end: 2027-01-28, kind: chmp}
+  - {name: "CHMP meeting", start: 2027-02-22, end: 2027-02-25, kind: chmp}
+  - {name: "CHMP meeting", start: 2027-03-30, end: 2027-04-02, kind: chmp}
+  - {name: "CHMP meeting", start: 2027-04-28, end: 2027-04-30, kind: chmp}
+  - {name: "CHMP meeting", start: 2027-05-24, end: 2027-05-27, kind: chmp}
+  - {name: "CHMP meeting", start: 2027-06-21, end: 2027-06-24, kind: chmp}
+  - {name: "CHMP meeting", start: 2027-07-19, end: 2027-07-22, kind: chmp}
+  - {name: "CHMP written procedure (August)", start: 2027-08-16, end: 2027-08-19, kind: chmp}
+  - {name: "CHMP meeting", start: 2027-09-13, end: 2027-09-16, kind: chmp}
+  - {name: "CHMP meeting", start: 2027-10-11, end: 2027-10-14, kind: chmp}
+  - {name: "CHMP meeting", start: 2027-11-08, end: 2027-11-11, kind: chmp}
+  - {name: "CHMP meeting", start: 2027-12-13, end: 2027-12-16, kind: chmp}

@@ -19,7 +19,7 @@ DASH = Path(__file__).resolve().parents[1] / "dashboard"
 APP = str(DASH / "Home.py")
 PAGES = ["overview", "signals", "focus", "stock", "smart_money", "molecules", "backtest",
          "catalysts", "news", "watchlist", "compare", "alerts", "portfolio", "copilot",
-         "settings", "health", "market"]
+         "settings", "health", "market", "screener"]
 
 if str(DASH) not in sys.path:
     sys.path.insert(0, str(DASH))

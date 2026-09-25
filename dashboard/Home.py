@@ -73,6 +73,7 @@ nav = st.navigation(
         ],
         "Intelligence": [
             _page("focus.py", "Focus list", "leaderboard", "Stocks_in_Focus"),
+            _page("screener.py", "Screener", "filter_alt", "Screener"),
             _page("smart_money.py", "Smart money & flow", "account_balance", "Smart_Money"),
             _page("molecules.py", "Molecules", "science", "Molecules"),
             _page("backtest.py", "Backtest", "history", "Backtest"),

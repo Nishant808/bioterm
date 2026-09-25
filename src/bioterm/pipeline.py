@@ -133,6 +133,37 @@ def run_backtest(_: list[str] | None = None) -> dict:
     return {"backtest": run_job("backtest", backtest.run)}
 
 
+def refresh_research(_: list[str] | None = None) -> dict:
+    """Slower research layers, once a day with the close run: the catalyst outcome
+    database (+ its topline backfill) and the competitive landscape."""
+    from .process import landscape, outcomes
+
+    from .ingest import drugs, etf, gov, whole13f
+
+    return {"outcomes": run_job("outcomes", outcomes.run),
+            "landscape": run_job("landscape", landscape.run),
+            # whole-market 13F: a no-op until the SEC publishes the next quarter
+            "whole13f": run_job("whole13f", whole13f.run),
+            "drugs": _weekly("drugs", drugs.run),
+            "gov": run_job("gov", gov.run),
+            "etf": run_job("etf", etf.run)}
+
+
+def _weekly(job: str, fn) -> dict:
+    """Run ``fn`` at most once every 6 days (sources that change slowly)."""
+    from .store import get_meta, set_meta
+
+    last = (get_meta("weekly_jobs", {}) or {}).get(job)
+    if last and (datetime.now(timezone.utc) - datetime.fromisoformat(last)).days < 6:
+        return {"skipped": f"ran {last[:10]}"}
+    out = run_job(job, fn)
+    if "error" not in out:
+        state = get_meta("weekly_jobs", {}) or {}
+        state[job] = datetime.now(timezone.utc).isoformat()
+        set_meta("weekly_jobs", state)
+    return out
+
+
 def run_full_refresh(limit: int | None = None, skip_universe: bool = False) -> dict:
     init_db()
     if not skip_universe:
@@ -152,6 +183,7 @@ def run_full_refresh(limit: int | None = None, skip_universe: bool = False) -> d
         "intel": refresh_intel(),
         "recompute": recompute(),
         "backtest": run_backtest(),
+        "research": refresh_research(),
     }
     return results
 

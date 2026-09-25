@@ -223,3 +223,74 @@ with tab_opt:
                 })
         st.caption("Snapshot from Yahoo Finance chains (delayed). Implied move shows what a "
                    "catalyst is priced for; unusual call or put volume feeds the signal engine.")
+
+# ------------------------------------------------------------------ whole market + filings
+from _shared import q  # noqa: E402
+
+wm = q("SELECT ticker, period, holders, holders_prev, new_holders, exited_holders, value "
+       "FROM inst_ownership WHERE period = (SELECT MAX(period) FROM inst_ownership)")
+d13 = q("SELECT ticker, form, filed_date, url FROM filings WHERE (form LIKE 'SC 13%' OR form "
+        "LIKE 'SCHEDULE 13%') AND filed_date >= :c ORDER BY filed_date DESC LIMIT 60",
+        {"c": (pd.Timestamp.today() - pd.Timedelta(days=45)).strftime("%Y-%m-%d")})
+c_wm, c_13 = st.columns(2, gap="medium")
+with c_wm:
+    with card("All 13F filers - biggest changes", icon_name="groups",
+              meta="SEC Form 13F data sets · holders per name vs the prior quarter"):
+        if wm.empty:
+            st.caption("Loads from the SEC's quarterly 13F data sets on the next full refresh.")
+        else:
+            wm["change"] = wm["holders"] - wm["holders_prev"]
+            st.dataframe(wm.sort_values("change", ascending=False).head(25)[
+                ["ticker", "holders", "change", "new_holders", "exited_holders", "value"]],
+                hide_index=True, width="stretch", column_config={
+                    "holders": "Holders", "change": st.column_config.NumberColumn(
+                        "Δ holders", format="%+d"),
+                    "new_holders": "New", "exited_holders": "Exited",
+                    "value": st.column_config.NumberColumn("Value", format="compact")})
+            st.caption(f"Quarter ending {pd.Timestamp(wm['period'].iloc[0]):%b %d, %Y}.")
+with c_13:
+    with card("Schedule 13D / 13G filings", icon_name="how_to_reg",
+              meta="last 45 days · 13D = activist intent, 13G = passive 5%+"):
+        if d13.empty:
+            st.caption("None in the last 45 days.")
+        else:
+            st.dataframe(d13, hide_index=True, width="stretch", column_config={
+                "ticker": "Ticker", "form": "Form",
+                "filed_date": st.column_config.DateColumn("Filed", format="MMM D"),
+                "url": st.column_config.LinkColumn("", display_text="Open")})
+
+# ------------------------------------------------------------------ sector flows
+from bioterm.ingest.etf import next_rebalance, rebalance_pressure  # noqa: E402
+
+fl = q("SELECT date, nav, shares_out, aum, flow_est FROM etf_flows WHERE etf = 'XBI' "
+       "ORDER BY date")
+with card("XBI creations & redemptions", icon_name="swap_horiz",
+          meta=f"daily Δ shares × NAV · next quarterly rebalance {next_rebalance():%b %d, %Y}"):
+    if fl.empty:
+        st.caption("Loads from SPDR's NAV history on the next full refresh.")
+    else:
+        fl["date"] = pd.to_datetime(fl["date"])
+        fl = fl.tail(180)
+        fl["flow_m"] = fl["flow_est"] / 1e6
+        fig = go.Figure(go.Bar(x=fl["date"], y=fl["flow_m"],
+                               marker_color=[POS if v >= 0 else NEG for v in fl["flow_m"]],
+                               hovertemplate="%{x|%b %d}: %{y:+,.0f}M<extra></extra>"))
+        fig.update_layout(**plotly_layout(height=220, bargap=0.15))
+        chart(fig, key="xbi_flows")
+        last = fl.iloc[-1]
+        st.caption(f"AUM ${last['aum'] / 1e9:,.2f}B · 20-day net flow "
+                   f"{fl['flow_est'].tail(20).sum() / 1e6:+,.0f}M")
+    rp = rebalance_pressure()
+    if not rp.empty:
+        st.caption("Rebalance pressure - names furthest from XBI's equal weight (estimate; "
+                   "the index also applies liquidity caps). Positive = the fund buys.")
+        st.dataframe(rp[["ticker", "weight", "target", "drift", "trade_usd", "days_of_volume"]],
+                     hide_index=True, width="stretch", column_config={
+                         "weight": st.column_config.NumberColumn("Weight", format="percent"),
+                         "target": st.column_config.NumberColumn("Equal weight",
+                                                                 format="percent"),
+                         "drift": st.column_config.NumberColumn("Drift", format="percent"),
+                         "trade_usd": st.column_config.NumberColumn("Implied trade",
+                                                                    format="compact"),
+                         "days_of_volume": st.column_config.NumberColumn("Days of volume",
+                                                                         format="%.1f")})

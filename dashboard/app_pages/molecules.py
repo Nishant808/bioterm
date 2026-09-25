@@ -199,6 +199,53 @@ with card("Dossier", icon_name="folder_open"):
                 st.session_state.pop("mol_pick", None)
                 st.rerun()
 
+    with st.expander("Valuation (rNPV)", icon=":material/calculate:"):
+        from bioterm.process import valuation as val
+
+        vin, vres = val.load(mid)
+        d_pos, d_phase, d_area = val.default_pos(mid)
+        st.caption("Risk-adjusted NPV from your assumptions - peak sales, launch, margin, "
+                   "exclusivity - weighted by the probability of success. Default PoS: "
+                   + (f"{d_pos:.0%} (historical approval rate from {d_phase} in {d_area}, "
+                      "BIO/Informa/QLS 2011-2020)" if d_pos is not None else "no trials linked"))
+        can_val = _auth.can_edit()
+        with st.form(f"val_{mid}", border=False):
+            c1, c2, c3, c4 = st.columns(4)
+            peak = c1.number_input("Peak sales ($M)", 0.0, 1e5, float(vin.peak_sales) / 1e6, 50.0)
+            launch = c2.number_input("Launch year", 2000, 2060, int(vin.launch_year), 1)
+            ramp = c3.number_input("Years to peak", 1, 15, int(vin.ramp_years), 1)
+            loe_y = c4.number_input("Exclusivity ends", 2000, 2080, int(vin.loe_year), 1)
+            c5, c6, c7, c8 = st.columns(4)
+            margin = c5.number_input("Operating margin %", 0.0, 100.0, float(vin.margin) * 100, 5.0)
+            royalty = c6.number_input("Royalty % (partnered; 0 = own sales)", 0.0, 100.0,
+                                      float(vin.royalty or 0) * 100, 1.0)
+            disc = c7.number_input("Discount rate %", 1.0, 40.0, float(vin.discount) * 100, 0.5)
+            ero = c8.number_input("Sales lost / yr after LOE %", 0.0, 100.0,
+                                  float(vin.erosion) * 100, 5.0)
+            c9, c10, c11 = st.columns(3)
+            dev = c9.number_input("Remaining dev cost ($M)", 0.0, 1e5, float(vin.dev_cost) / 1e6, 10.0)
+            devy = c10.number_input("Over years", 1, 15, int(vin.dev_years), 1)
+            pos_in = c11.number_input("PoS % (0 = use the prior)", 0.0, 100.0,
+                                      float(vin.pos or 0) * 100, 1.0)
+            go_val = st.form_submit_button("Save and value", type="primary", disabled=not can_val,
+                                           icon=":material/calculate:")
+        if not can_val:
+            _auth.guard("edit valuations", key=f"val_{mid}")
+        if go_val and can_val:
+            vin = val.Inputs(peak_sales=peak * 1e6, launch_year=int(launch), ramp_years=int(ramp),
+                             loe_year=int(loe_y), margin=margin / 100,
+                             royalty=royalty / 100 or None, discount=disc / 100,
+                             erosion=ero / 100, dev_cost=dev * 1e6, dev_years=int(devy),
+                             pos=pos_in / 100 or None)
+            vres = val.save(mid, vin)
+            st.cache_data.clear()
+        if vres:
+            kv_list([("rNPV", f"${vres['rnpv'] / 1e6:,.0f}M", None),
+                     ("Unrisked commercial NPV", f"${vres['npv_commercial'] / 1e6:,.0f}M", None),
+                     ("Development cost (PV)", f"${vres['npv_dev_cost'] / 1e6:,.0f}M", None),
+                     ("PoS used", f"{vres['pos']:.0%}" if vres.get("pos") is not None
+                      else "–", None)])
+
     t_tr, t_news, t_cat, t_pap = st.tabs([
         f":material/biotech: Trials ({len(tr)})",
         f":material/newspaper: Headlines ({int((links['kind'] == 'news').sum()) if not links.empty else 0})",

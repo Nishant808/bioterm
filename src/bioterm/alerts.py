@@ -206,6 +206,14 @@ def run(deliver: bool = True, max_deliver: int = 15) -> dict:
 
     if new_rows:
         bulk_upsert(alerts_fired, new_rows)
+    # sources with state (screen memberships) commit it only after a real run
+    for name, fn in EXTRA_SOURCES:
+        commit = getattr(fn, "commit", None)
+        if commit is not None:
+            try:
+                commit()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("alert source %s commit failed: %s", name, exc)
 
     delivered = 0
     channels: dict[str, int] = {}

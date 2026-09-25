@@ -103,6 +103,10 @@ def run(tickers: list[str] | None = None) -> dict:
                 "burn_ttm": burn_ttm,
                 "runway_quarters": _runway(cash, burn_ttm),
                 "next_earnings_date": stats.get("next_earnings_date"),
+                "xbrl_shares_out": facts.get("xbrl_shares_out"),
+                "warrants_out": facts.get("warrants_out"),
+                "options_out": facts.get("options_out"),
+                "total_debt": facts.get("total_debt"),
                 "sources": "yfinance+edgar" if cik else "yfinance",
                 "updated_at": now,
             }
