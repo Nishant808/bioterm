@@ -40,10 +40,15 @@ dashboard/      Streamlit — Home.py (router: st.navigation top bar with sectio
                 _ui.py (design system: tokens + components + chart helpers + signal
                 taxonomy DETECTORS/SIGNAL_FAMILIES + signal_rows/call_rows)
                 _shared.py (cached DB reads incl. signal_board, smart_money, short_flow,
-                options_latest, molecules_df, backtest_result) · assets/ (logo + mark SVG)
+                options_latest, molecules_df, backtest_result)
+                _live.py (LIVE Yahoo quotes/history/closes, 60 s cache, market clock,
+                indicators; labelled stored-close fallback only if Yahoo is down)
+                assets/ (logo.svg + mark.svg, built by make_logo.py: Inter outlines)
                 (portfolio = Paper-Trading Desk — simulated fills, long-only)
 .streamlit/config.toml   native theme (colours, Inter/JetBrains Mono, radius, chart palette)
-.github/workflows/  ingest-fast.yml (0 11-23/2)  ·  ingest-full.yml (0 9, + FinBERT)
+.github/workflows/  ingest-full.yml: weekdays at the US open (09:35 ET) + close (16:10 ET),
+                    DST-safe gate step, + FinBERT + alerts · ingest-fast.yml: 12:00,
+                    16:00, 18:30, 23:00 UTC (news, catalysts, score, signals, alerts)
                     probe.yml (push to main-vcyb9o / dispatch: every job against live
                     sources on a Postgres 16 service, then renders every page)
 deploy/         Dockerfile, compose, launchd, setup-github.sh, README.md
@@ -90,6 +95,13 @@ private repo `Nishant808/bioterm`.
 - `tests/test_dashboard.py` renders every page with Streamlit's `AppTest` against an
   empty and a seeded DB, plus deep links and a few interactions — keep it green.
 - News sentiment: `_shared.sentiment_df(days)` / `sentiment_series(ticker, days)`.
+- **Prices shown in the app are always live** (`_live.quotes/quote/history/closes`,
+  Yahoo, 60 s cache; the stock page's quote re-fetches every 60 s via `st.fragment`).
+  The ingested `prices` table feeds the engines only — never read it in a page. If
+  Yahoo fails, `_live` falls back to the stored close and `source_note()` says so.
+  Tests set `BIOTERM_LIVE_PRICES=0` (conftest) to force that offline path.
+- Logo: edit `dashboard/assets/make_logo.py` and regenerate — the wordmark is Inter
+  converted to paths (st.logo is an `<img>`, it can't load web fonts).
 - No repeated disclaimer on pages — it lives once in the page footer (`_ui.footer()`,
   rendered by the router).
 

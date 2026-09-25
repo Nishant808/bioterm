@@ -755,3 +755,27 @@ daily runs), 175 signal calls (12 STRONG BUY / 32 BUY / 31 SELL / 17 STRONG SELL
 backtest over 172 names / 18,749 events. `calibrated: 0` on this first run (the event
 study didn't exist yet) - from tomorrow the signals use it. FinBERT model now cached
 on `main` (`hf-finbert-v1`).
+
+## 2026-09-25 — session 10: logo, live prices, open/close ingest
+
+- **Logo** (original, in-house): a hexagon (benzene ring) crossed by a price pulse
+  that breaks out of it, on the brand blue→indigo tile; wordmark "Bio" 700 / "Term"
+  500 in Inter (SIL OFL 1.1) converted to vector paths so it renders the same in an
+  `<img>`. `dashboard/assets/make_logo.py` regenerates `logo.svg` + `mark.svg`. The top
+  bar now shows the full wordmark (top nav has no sidebar, so Streamlit always uses
+  `icon_image`).
+- **Live prices everywhere in the app** — new `dashboard/_live.py` (Yahoo, 60 s cache):
+  Stock detail quote (last trade + change, re-fetched every 60 s), price chart with new
+  1D (5-min) / 5D (15-min) intraday windows and 6M/1Y/2Y/5Y daily, indicators computed
+  on the live history; Compare; Paper trading (fills default to the live price,
+  positions and the equity curve marked to live prices); Signals board gets live Price
+  and Today columns. The stored-price readers were deleted from `_shared.py`. Fallback
+  when Yahoo is unreachable: the last stored close, labelled as such.
+- **Ingest schedule:** `ingest-full` now runs weekdays at the US **open (09:35 ET)** and
+  **close (16:10 ET)** instead of 09:00 UTC. Cron is UTC, so each slot fires at both
+  daylight-saving offsets and a `gate` step keeps the one inside the New York window
+  (the other costs ~10 s). The full run also sends alerts now. `ingest-fast` trimmed to
+  4 runs/day (12:00, 16:00, 18:30, 23:00 UTC) to stay inside the private-repo budget:
+  ~800 + ~600 + ~45 ≈ 1,450 Actions min/month.
+- `probe.yml` gained a live-Yahoo check (quotes, daily + intraday history, closes) —
+  the sandbox can't reach Yahoo, so this is where the live path is verified.

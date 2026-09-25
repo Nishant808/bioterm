@@ -6,6 +6,8 @@ def _isolated_db(tmp_path, monkeypatch):
     """Point every test at a throwaway SQLite file; don't seed from the real YAML."""
     db = tmp_path / "test.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db}")
+    # the dashboard's live Yahoo prices -> stored-close fallback (no network in tests)
+    monkeypatch.setenv("BIOTERM_LIVE_PRICES", "0")
     import bioterm.db as db_mod
     import bioterm.store as store_mod
 

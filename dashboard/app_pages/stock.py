@@ -8,11 +8,12 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
+import _live as live
 from _shared import (catalysts_df, filings_df, fundamentals_row, insider_txns_df,
-                     molecules_df, money, news_df, options_history, pct, prices_df, q,
+                     molecules_df, money, news_df, options_history, pct, q,
                      score_history, scores_df, sentiment_df, sentiment_series, short_flow,
                      short_series, signal_board, signal_history, signals_today, smart_money,
-                     technicals_df, trials_df, universe_df)
+                     trials_df, universe_df)
 from _ui import (ACCENT, BORDER_STRONG, CATALYST_TYPES, FAMILIES, GRID, MUTED, NEG,
                  PHASE_COLORS, POS, SMA_COLORS, WARN, card, catalyst_family, catalyst_label,
                  catalyst_title, chart, display_name, empty_state, esc, headline_rows,
@@ -75,7 +76,23 @@ st.html(f"<div class='bt-hero'><span class='bt-hero-tk'>{esc(ticker)}</span>"
 # ------------------------------------------------------------------ KPIs
 hist = score_history(ticker)
 tone_w, _ = tone_of(sg.get("signal"))
-with kpi_row(6, "hero"):
+
+
+@st.fragment(run_every=live.TTL)
+def _live_price(tk: str) -> None:
+    """Last trade from Yahoo, re-fetched every minute while the page is open."""
+    qd = live.quote(tk)
+    if not qd:
+        st.metric("Last price", "–", border=True, help="No quote from Yahoo Finance")
+        return
+    chg, pc = qd.get("change"), qd.get("change_pct")
+    st.metric("Last price", f"${qd['price']:,.2f}",
+              delta=None if pc is None or pd.isna(pc) else f"{chg:+.2f} ({pc * 100:+.2f}%)",
+              border=True, help=live.source_note(qd.get("source", "live"), qd.get("asof")))
+
+
+with kpi_row(7, "hero"):
+    _live_price(ticker)
     if not srow.empty:
         st.metric("Focus Score", f"{srow.iloc[0]['focus_score']:.3f}",
                   delta=f"Rank #{int(srow.iloc[0]['rank'])}", delta_color="off",
@@ -177,17 +194,27 @@ with tab_sig:
 
 # ---- price
 with tab_px:
-    pxdf = prices_df(ticker)
-    tech = technicals_df(ticker)
+    win = st.segmented_control("Window", ["1D", "5D", "6M", "1Y", "2Y", "5Y"], default="1Y",
+                               required=True, label_visibility="collapsed", key="px_win")
+    intraday = win in ("1D", "5D")
+    # always Yahoo, never the ingested table (that only feeds the engines); the
+    # daily history also drives the indicator KPIs whatever window is shown
+    daily, px_src = live.history(ticker, "5y" if win in ("2Y", "5Y") else "2y")
+    tech = live.indicators(daily)
+    if intraday:
+        pxdf, px_src = live.history(ticker, {"1D": "1d", "5D": "5d"}[win],
+                                    {"1D": "5m", "5D": "15m"}[win])
+    else:
+        pxdf = daily
     if pxdf.empty:
-        empty_state("No price history", "Yahoo Finance returned nothing for this ticker.",
+        empty_state("No price history",
+                    "Yahoo Finance returned nothing for this ticker"
+                    + (" (intraday bars need the live feed)." if intraday else "."),
                     "show_chart")
     else:
-        win = st.segmented_control("Window", ["6M", "1Y", "2Y"], default="1Y",
-                                   required=True, label_visibility="collapsed")
-        days = {"6M": 126, "1Y": 252, "2Y": 520}[win]
-        p = pxdf.tail(days)
-        t = tech[tech["date"] >= p["date"].min()] if not tech.empty else tech
+        days = {"6M": 126, "1Y": 252, "2Y": 504, "5Y": 1260}.get(win)
+        p = pxdf.tail(days) if days else pxdf
+        t = tech[tech["date"] >= p["date"].min()] if not intraday else tech.iloc[0:0]
 
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
                             row_heights=[0.62, 0.16, 0.22], vertical_spacing=0.035)
@@ -225,7 +252,7 @@ with tab_px:
         ahead = pd.Timedelta(days=60)
         cat = catalysts_df()
         cat = cat[(cat["ticker"] == ticker) & (cat["date"] >= p["date"].min())
-                  & (cat["date"] <= last_d + ahead)]
+                  & (cat["date"] <= last_d + ahead)] if not intraday else cat.iloc[0:0]
         x_end = last_d + (ahead if (cat["date"] > last_d).any() else pd.Timedelta(days=3))
         if not cat.empty:
             for d in cat["date"].unique():
@@ -245,8 +272,11 @@ with tab_px:
             height=560, hovermode="x unified", xaxis_rangeslider_visible=False,
             legend=dict(orientation="h", yanchor="bottom", y=1.01, x=0,
                         bgcolor="rgba(0,0,0,0)", font=dict(size=11))))
-        fig.update_xaxes(range=[p["date"].min(), x_end],
-                         rangebreaks=[dict(bounds=["sat", "mon"])], showgrid=False,
+        breaks = [dict(bounds=["sat", "mon"])]
+        if intraday:
+            breaks.append(dict(bounds=[16, 9.5], pattern="hour"))   # overnight gaps
+        fig.update_xaxes(range=[p["date"].min(), x_end if not intraday else p["date"].max()],
+                         rangebreaks=breaks, showgrid=False,
                          showspikes=True, spikemode="across", spikesnap="cursor",
                          spikecolor=BORDER_STRONG, spikethickness=1, spikedash="solid")
         fig.update_yaxes(gridcolor=GRID, zeroline=False)
@@ -257,8 +287,8 @@ with tab_px:
                          range=[0, 100], tickvals=[30, 70], row=3, col=1)
         chart(fig, key="price")
 
-        if not t.empty:
-            last = t.iloc[-1]
+        if not tech.empty:
+            last = tech.iloc[-1]
             with kpi_row(4, "tech"):
                 st.metric("Return 1 month", pct(last.get("ret_1m")),
                           delta=f"3M {pct(last.get('ret_3m'))} · 6M {pct(last.get('ret_6m'))}",
@@ -273,8 +303,10 @@ with tab_px:
                           "–" if vz is None or pd.isna(vz) else f"{vz:+.2f}", border=True)
                 st.metric("Position in 52-week range",
                           f"{(last.get('pct_52w_range') or 0) * 100:.0f}%", border=True)
-        st.caption("Amber markers are dated catalysts in this window and the next 60 days — "
-                   "hover one for details. Every catalyst is on the Catalysts tab.")
+        st.caption(live.source_note(px_src, p["date"].iloc[-1] if intraday else None)
+                   + (" · Amber markers are dated catalysts in this window and the next "
+                      "60 days — every catalyst is on the Catalysts tab." if not intraday
+                      else " · 5-minute bars" if win == "1D" else " · 15-minute bars"))
 
 # ---- pipeline
 with tab_pipe:

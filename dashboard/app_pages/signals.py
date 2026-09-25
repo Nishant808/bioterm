@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+import _live as live
 from _shared import backtest_result, signal_board, signal_history, signal_label_history, signals_today
 from _ui import (BORDER_STRONG, DETECTORS, MUTED, NEG, POS, SIGNAL_COLORS, SIGNAL_FAMILIES,
                  SIGNAL_LABELS, call_rows, card, chart, detector_name, display_name,
@@ -122,10 +123,15 @@ with card("Signal board", icon_name="table_rows",
         was=view["prev_label"].map(lambda x: str(x).title() if isinstance(x, str) else "–"),
         reasons=view["ticker"].map(lambda t: reasons.get(t, [])))
     view = view.reset_index(drop=True)
+    # live price + today's move from Yahoo (the engine's own close is its input, not
+    # what the board shows)
+    lq = live.quotes(view["ticker"].tolist())
+    view["price"] = view["ticker"].map(lambda t: (lq.get(t) or {}).get("price"))
+    view["day"] = view["ticker"].map(lambda t: (lq.get(t) or {}).get("change_pct"))
     lab_opts = [x.title() for x in SIGNAL_LABELS]
     picked = st.dataframe(
         view[["ticker", "name", "label_b", "net", "bull", "bear", "was", "n_buy", "n_sell",
-              "reasons", "close"]],
+              "reasons", "price", "day"]],
         hide_index=True, height=520, key="sg_board", on_select="rerun",
         selection_mode="single-row",
         column_config={
@@ -144,7 +150,10 @@ with card("Signal board", icon_name="table_rows",
             "n_sell": st.column_config.NumberColumn("Sell", width=50,
                                                     help="Sell-side detectors firing"),
             "reasons": st.column_config.ListColumn("Evidence", width="large"),
-            "close": st.column_config.NumberColumn("Close", format="$%.2f", width=80),
+            "price": st.column_config.NumberColumn("Price", format="$%.2f", width=80,
+                                                   help="Live · Yahoo Finance"),
+            "day": st.column_config.NumberColumn("Today", format="percent", width=75,
+                                                 help="Change vs the previous close"),
         })
     st.caption("Select a row to see its evidence below.")
     rows = list(getattr(getattr(picked, "selection", None), "rows", []) or [])

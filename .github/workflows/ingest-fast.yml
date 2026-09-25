@@ -4,16 +4,18 @@
 #
 # Secrets: DATABASE_URL, SEC_UA  (+ optional TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)
 #
-# Cadence tuned for a PRIVATE repo (2000 Actions-min/month free tier):
-#   every 2h from 11:00-23:00 UTC (≈ 7am-7pm ET, when biotech news breaks)
-#   ≈ 7 runs/day · ~5 min each · ~1050 min/month
+# Cadence tuned for a PRIVATE repo (2000 Actions-min/month free tier), fitted
+# around the full runs at the US open and close (ingest-full.yml):
+#   12:00 · 16:00 · 18:30 · 23:00 UTC  (≈ pre-market, midday, afternoon, evening ET)
+#   4 runs/day · ~5 min each · ~600 min/month
 # On a public repo you can widen this to "*/30 * * * *" (unlimited minutes).
 
 name: ingest-fast
 
 on:
   schedule:
-    - cron: "0 11-23/2 * * *"
+    - cron: "0 12,16,23 * * *"
+    - cron: "30 18 * * *"
   workflow_dispatch: {}
 
 concurrency:

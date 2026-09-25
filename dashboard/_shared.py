@@ -106,20 +106,6 @@ def news_df(limit: int = 1000) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=120)
-def prices_df(ticker: str) -> pd.DataFrame:
-    df = q("SELECT * FROM prices WHERE ticker = :t ORDER BY date", {"t": ticker})
-    if not df.empty:
-        df["date"] = pd.to_datetime(df["date"])
-    return df
-
-
-@st.cache_data(ttl=120)
-def technicals_df(ticker: str) -> pd.DataFrame:
-    df = q("SELECT * FROM technicals WHERE ticker = :t ORDER BY date", {"t": ticker})
-    if not df.empty:
-        df["date"] = pd.to_datetime(df["date"])
-    return df
 
 
 @st.cache_data(ttl=120)
@@ -172,28 +158,6 @@ def universe_df() -> pd.DataFrame:
     return q("SELECT * FROM securities ORDER BY ticker")
 
 
-# --------------------------------------------------------------- paper trading
-@st.cache_data(ttl=120)
-def last_close_all() -> dict:
-    """{ticker: most-recent close} for the whole universe — one query."""
-    df = q("SELECT p.ticker, p.close FROM prices p JOIN ("
-           "  SELECT ticker, MAX(date) d FROM prices GROUP BY ticker) m "
-           "ON p.ticker = m.ticker AND p.date = m.d")
-    return dict(zip(df["ticker"], df["close"])) if not df.empty else {}
-
-
-@st.cache_data(ttl=120)
-def price_hist(tickers: tuple[str, ...], start: str) -> pd.DataFrame:
-    if not tickers:
-        return pd.DataFrame(columns=["ticker", "date", "close"])
-    ph = ",".join(f":t{i}" for i in range(len(tickers)))
-    params = {f"t{i}": t for i, t in enumerate(tickers)}
-    params["s"] = start
-    df = q(f"SELECT ticker, date, close FROM prices "
-           f"WHERE ticker IN ({ph}) AND date >= :s ORDER BY date", params)
-    if not df.empty:
-        df["date"] = pd.to_datetime(df["date"])
-    return df
 
 
 # --------------------------------------------------------------- news sentiment

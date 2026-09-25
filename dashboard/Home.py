@@ -51,6 +51,7 @@ def _fresh(name: str):
 
 _fresh("_shared")  # secrets bridge + src/ on sys.path - must precede bioterm imports
 _ui = _fresh("_ui")
+_fresh("_live")
 
 
 def _page(path: str, title: str, icon: str, url_path: str | None = None,
@@ -88,7 +89,9 @@ nav = st.navigation(
 )
 
 st.set_page_config(page_title=f"{nav.title} · BioTerm")
-st.logo(str(_ASSETS / "logo.svg"), size="large", icon_image=str(_ASSETS / "mark.svg"))
+# the full wordmark in both states: with top navigation there is no sidebar, so
+# Streamlit always shows icon_image
+st.logo(str(_ASSETS / "logo.svg"), size="large", icon_image=str(_ASSETS / "logo.svg"))
 _ui.inject_css()
 
 try:

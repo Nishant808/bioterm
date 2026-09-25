@@ -1,22 +1,26 @@
 # Full pipeline: universe + prices + technicals + EDGAR + fundamentals + clinical
 # trials + FDA + insiders + news + alt data (13F, FINRA short volume, options,
 # per-molecule trials) + FinBERT + catalysts + Focus Score + signals + backtest.
-# ~18-28 min (the first run backfills 5y of prices, 4 quarters of 13Fs and 30
-# days of short volume - later runs are incremental).
+# ~15-23 min (the first run backfilled 5y of prices, 4 quarters of 13F and 30
+# days of short volume - runs are incremental since).
 #
 # Secrets: DATABASE_URL, SEC_UA
 #
-# Cadence tuned for a PRIVATE repo (2000 Actions-min/month free tier):
-#   once daily at 09:00 UTC  ·  ~30 runs/month · ~22 min · ~660 min/month
-#   (prices/fundamentals/trials/filings don't move fast enough to need more)
-# Combined with ingest-fast that's ~1750 min/month. On a public repo you can run
-# this 3x/day ("0 6,13,21 * * *").
+# Twice per US trading day: at the OPEN (09:35 New York) and after the CLOSE
+# (16:10 New York). Cron is UTC and New York shifts with daylight saving, so each
+# slot is scheduled at both UTC offsets and the `gate` step keeps only the one that
+# lands inside the New York window (the other exits in seconds). GitHub can start
+# a scheduled run late, so each window is an hour wide.
+#   ~44 runs/month · ~18 min · ~800 min/month (+ ~45 min of gate no-ops)
+# With ingest-fast (4/day) that's ~1,450 min/month of the 2,000 free.
+# The dashboard itself shows live Yahoo prices; these runs feed the engines.
 
 name: ingest-full
 
 on:
   schedule:
-    - cron: "0 9 * * *"
+    - cron: "35 13,14 * * 1-5"   # market open  - 09:35 ET (13:35 UTC in EDT, 14:35 in EST)
+    - cron: "10 20,21 * * 1-5"   # market close - 16:10 ET (20:10 UTC in EDT, 21:10 in EST)
   workflow_dispatch: {}
 
 concurrency:
@@ -28,31 +32,54 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
+      - name: Gate on the New York session
+        id: gate
+        run: |
+          now=$(TZ=America/New_York date +%H%M)
+          if [ "${{ github.event_name }}" != "schedule" ]; then run=true
+          elif [ "$now" -ge 0930 ] && [ "$now" -lt 1030 ]; then run=true    # open
+          elif [ "$now" -ge 1600 ] && [ "$now" -lt 1700 ]; then run=true    # close
+          else run=false; fi
+          echo "New York $now -> run=$run"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
       - uses: astral-sh/setup-uv@v5
+        if: steps.gate.outputs.run == 'true'
         with:
           python-version: "3.12"
       - run: uv sync --no-dev
+        if: steps.gate.outputs.run == 'true'
       # FinBERT: CPU-only torch + transformers, installed next to (not in) the locked
       # env so the dashboard/lockfile stay light. `uv run` never removes them (inexact
       # sync). Without them process/finbert.py is a no-op and VADER tone stays.
       - name: NLP extra (FinBERT)
+        if: steps.gate.outputs.run == 'true'
         continue-on-error: true
         run: |
           uv pip install --index-url https://download.pytorch.org/whl/cpu torch
           uv pip install "transformers>=4.44"
       - name: Cache FinBERT model
+        if: steps.gate.outputs.run == 'true'
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
           key: hf-finbert-v1
       - name: Full refresh
+        if: steps.gate.outputs.run == 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           BIOTERM_SEC_USER_AGENT: ${{ secrets.SEC_UA }}
         run: uv run bioterm ingest --preset full
+      - name: Alerts
+        if: steps.gate.outputs.run == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: uv run bioterm alerts
       - name: Summary
-        if: always()
+        if: always() && steps.gate.outputs.run == 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: uv run bioterm status || true

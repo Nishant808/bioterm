@@ -17,6 +17,7 @@ on:
     paths:
       - "src/bioterm/**"
       - "config/**"
+      - "dashboard/_live.py"
       - ".github/workflows/probe.yml"
 
 concurrency:
@@ -121,6 +122,24 @@ jobs:
               print("\n===== smart money"); print(sm.ticker_summary(ch).head(20).to_string(index=False))
           except Exception as e:
               print("ERR", e)
+          EOF
+      - name: Dashboard live prices (Yahoo)
+        if: always()
+        run: |
+          uv run python - <<'EOF'
+          import sys
+          sys.path.insert(0, "dashboard")
+          import _live as live
+          q = live.quotes(["VRTX", "MRNA", "XBI", "NOPE_TICKER"])
+          print({k: (round(v["price"], 2), v["source"]) for k, v in q.items()})
+          d, src = live.history("VRTX", "2y")
+          i, isrc = live.history("VRTX", "5d", "15m")
+          c, csrc = live.closes(["VRTX", "MRNA"], "2026-01-02")
+          print("daily", len(d), src, "intraday", len(i), isrc, "closes", len(c), csrc)
+          print(live.indicators(d).iloc[-1][["close", "sma50", "rsi14", "ret_1m"]].to_dict())
+          ok = {"VRTX", "MRNA", "XBI"} <= {k for k, v in q.items() if v["source"] == "live"}
+          ok = ok and src == "live" and len(d) > 400 and isrc == "live" and len(i) > 20
+          sys.exit(0 if ok else 1)
           EOF
       - name: Dashboard pages on this database
         if: always()

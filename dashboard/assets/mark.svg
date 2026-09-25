@@ -1,14 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="BioTerm">
   <defs>
-    <linearGradient id="bt-g" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#4C8DFF"/>
-      <stop offset="1" stop-color="#6A5CF6"/>
+    <linearGradient id="btg" x1="4" y1="2" x2="28" y2="30" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3D84FA"/><stop offset="1" stop-color="#5B4CE6"/>
     </linearGradient>
   </defs>
-  <rect width="32" height="32" rx="8" fill="url(#bt-g)"/>
-  <g fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M16 6C19.5 7.5 21 9.3 21 11S19.5 14.5 16 16 11 19.3 11 21s1.5 3.5 5 5"/>
-    <path d="M16 6C12.5 7.5 11 9.3 11 11s1.5 3.5 5 5 5 3.3 5 5-1.5 3.5-5 5" stroke-opacity=".5"/>
-    <path d="M13.3 11h5.4M13.3 21h5.4" stroke-width="1.6" stroke-opacity=".7"/>
-  </g>
+  <rect width="32" height="32" rx="8" fill="url(#btg)"/>
+  <rect x=".5" y=".5" width="31" height="31" rx="7.5" fill="none" stroke="#FFFFFF" stroke-opacity=".14"/>
+  <path d="M16 6.6 24.1 11.3V20.7L16 25.4 7.9 20.7V11.3Z" fill="none" stroke="#FFFFFF"
+        stroke-opacity=".5" stroke-width="1.7" stroke-linejoin="round"/>
+  <path d="M5.2 19.4H10.4L12.9 14.9 16.2 21.2 19.1 13.6 22.2 10.9" fill="none" stroke="#FFFFFF"
+        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="24.6" cy="8.8" r="2.1" fill="#FFFFFF"/>
 </svg>

@@ -6,7 +6,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from _shared import catalysts_df, fundamentals_row, money, prices_df, scores_df, sentiment_df
+import _live as live
+from _shared import catalysts_df, fundamentals_row, money, scores_df, sentiment_df
 from _ui import (BORDER_STRONG, CATALYST_TYPES, FAMILIES, SERIES, card, catalyst_family,
                  catalyst_label, catalyst_title, chart, display_name, empty_state,
                  page_header, plotly_layout)
@@ -53,8 +54,11 @@ with card("Price, rebased to 0% at the start of the window", icon_name="show_cha
     fig = go.Figure()
     fig.add_hline(y=0, line=dict(color=BORDER_STRONG, width=1))
     first_d, last_d = None, None
+    srcs = set()
     for tk in picks:
-        p = prices_df(tk).tail(days)
+        hist, src = live.history(tk, "5y" if days > 500 else "2y")
+        srcs.add(src)
+        p = hist.tail(days)
         if p.empty:
             continue
         first_d = p["date"].min() if first_d is None else min(first_d, p["date"].min())
@@ -85,6 +89,7 @@ with card("Price, rebased to 0% at the start of the window", icon_name="show_cha
         fig.update_xaxes(range=[first_d, last_d + (ahead if (near["date"] > last_d).any()
                                                    else pd.Timedelta(days=3))])
     chart(fig, key="compare")
+    st.caption(live.source_note("live" if srcs == {"live"} else "stored"))
 
 # ------------------------------------------------------------------ side by side
 sig = sentiment_df(14).set_index("ticker")

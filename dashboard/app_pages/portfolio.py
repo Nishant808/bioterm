@@ -1,7 +1,8 @@
 """Paper trading - record simulated buys and sells and watch the book's net worth.
 
-Fully separate from the research pages. Fills are simulated at the last daily
-close (or a price you enter). No real orders. Long-only.
+Fully separate from the research pages. Fills are simulated at the live Yahoo
+price (or a price you enter); positions are marked to live prices. No real
+orders. Long-only.
 """
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+import _live as live
 from _shared import scores_df, universe_df
 from _ui import (ACCENT, BORDER_STRONG, card, chart, empty_state, kpi_row, md_safe,
                  page_header, plotly_layout, spark, usd)
@@ -16,33 +18,8 @@ from bioterm import portfolio as pf
 from bioterm.db import read_sql
 
 page_header("Paper trading",
-            "Simulated fills at the last daily close · long-only · no real orders — for "
+            "Simulated fills at the live price · long-only · no real orders — for "
             "testing strategies")
-
-
-# self-contained cached readers (kept local so this page never depends on a
-# helper symbol that a Streamlit Cloud fast-reboot might not have reloaded yet)
-@st.cache_data(ttl=120)
-def last_close_all() -> dict:
-    df = read_sql(
-        "SELECT p.ticker, p.close FROM prices p JOIN "
-        "(SELECT ticker, MAX(date) d FROM prices GROUP BY ticker) m "
-        "ON p.ticker = m.ticker AND p.date = m.d")
-    return dict(zip(df["ticker"], df["close"])) if not df.empty else {}
-
-
-@st.cache_data(ttl=120)
-def price_hist(tickers: tuple[str, ...], start: str) -> pd.DataFrame:
-    if not tickers:
-        return pd.DataFrame(columns=["ticker", "date", "close"])
-    ph = ",".join(f":t{i}" for i in range(len(tickers)))
-    params = {f"t{i}": t for i, t in enumerate(tickers)}
-    params["s"] = start
-    df = read_sql(f"SELECT ticker, date, close FROM prices "
-                  f"WHERE ticker IN ({ph}) AND date >= :s ORDER BY date", params)
-    if not df.empty:
-        df["date"] = pd.to_datetime(df["date"])
-    return df
 
 
 def _get_last_book() -> str | None:
@@ -108,14 +85,16 @@ if delete:
 port = next(p for p in plist if p["id"] == sel)
 cash_start = float(port["cash_start"])
 trades = pf.get_trades(sel)          # always read fresh from the DB — never cached
-last_px = last_close_all()
+# marked to live prices (Yahoo), never the ingested table
+held = tuple(sorted(set(trades["ticker"].str.upper()))) if not trades.empty else ()
+live_q = live.quotes(held)
+last_px = {t: q["price"] for t, q in live_q.items()}
 summ = pf.mark_to_market(trades, last_px, cash_start)
 
 curve = pd.DataFrame()
 if not trades.empty:
-    held = tuple(sorted(set(trades["ticker"].str.upper())))
     start = pd.to_datetime(trades["ts"]).min().strftime("%Y-%m-%d")
-    ph = price_hist(held, start)
+    ph, _ = live.closes(held, start)
     curve = pf.equity_curve(trades, ph, cash_start)
 
 # ------------------------------------------------------------------ KPIs
@@ -240,9 +219,10 @@ with ticket_col:
         side = st.segmented_control("Side", ["BUY", "SELL"], default="BUY", required=True,
                                     key="pf_side", format_func=str.capitalize,
                                     width="stretch")
-        lc = last_px.get(tk)
+        _q = live_q.get(tk) or live.quote(tk)
+        lc = _q["price"] if _q else None
 
-        # per-ticker price state: seeds from that name's last close, remembers your edits
+        # per-ticker price state: seeds from that name's live price, remembers your edits
         _pk = f"pf_px::{tk}"
         if _pk not in st.session_state:
             st.session_state[_pk] = round(float(lc), 2) if lc else 0.0
@@ -252,10 +232,11 @@ with ticket_col:
         c1, c2 = st.columns(2, gap="small")
         qty = c1.number_input("Quantity", min_value=0.0, step=10.0, key="pf_qty")
         price = c2.number_input("Price ($)", min_value=0.0, step=0.01, key=_pk,
-                                help=f"Last close for {tk}: "
-                                     + (f"${lc:,.2f}" if lc else "n/a — enter one"))
+                                help=f"Live price for {tk}: "
+                                     + (f"${lc:,.2f}" if lc else "n/a — enter one")
+                                     + (f" ({live.source_note(_q['source'])})" if _q else ""))
         if lc and abs(price - round(float(lc), 2)) >= 0.01:
-            if st.button(f"Use last close ${lc:,.2f}", key="pf_usemkt",
+            if st.button(f"Use live price ${lc:,.2f}", key="pf_usemkt",
                          icon=":material/restart_alt:", type="tertiary"):
                 st.session_state[_pk] = round(float(lc), 2)
                 st.rerun()
