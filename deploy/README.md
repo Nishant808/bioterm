@@ -3,9 +3,10 @@
 Target architecture (all free):
 
 ```
-GitHub Actions cron  ──writes──▶  Neon Postgres  ◀──reads──  Streamlit Community Cloud
- (ingest-fast /30m)                (free tier)               (dashboard, always on)
- (ingest-full  3x/d)
+GitHub Actions  ──writes──▶  Neon Postgres  ◀──reads/writes──  Streamlit Community Cloud
+ ingest-full (US open + close, NYSE-calendar gated)              (dashboard; owner-locked
+ ingest-fast (3/day) · pulse (2-hourly, US hours)                edits; in-app pulse
+ backup (weekly artifact) · ci · probe                            while it's open)
 ```
 
 Nothing runs on your laptop. See **`../DEPLOYMENT_LOG.md`** for the live checklist
@@ -32,25 +33,45 @@ and the exact click-by-click for the account steps.
 
 ## The workflows
 
-| file | what | cron (private-repo default) | ~time |
+| file | what | schedule (UTC) | ~time |
 |---|---|---|---|
-| `.github/workflows/ingest-fast.yml` | news + sentiment + catalysts + score + alerts | `0 11-23/2 * * *` (every 2h, 11–23 UTC) | 4–8 min |
-| `.github/workflows/ingest-full.yml` | + prices, technicals, EDGAR, fundamentals, clinical, FDA, insiders | `0 9 * * *` (daily) | 15–25 min |
+| `ingest-full.yml` | US open: light preset (prices, news, PDUFA, AI, score, signals) · US close: full refresh + FinBERT + AI brief + alerts + housekeeping (snapshots, retention, DQ) | `35 13,14` + `10 20,21` weekdays; a gate keeps the slot inside the New York window (DST) and skips NYSE holidays | 5–10 / 25–40 min |
+| `ingest-fast.yml` | news + sentiment + AI events + catalysts + score + signals + alerts | weekdays `0 16,23` + `30 18`, weekends `0 23` | 4–8 min |
+| `pulse.yml` | halts, live SEC filings, wires, movers + alerts (gated to 07:00–20:00 ET) | `5 11-23/2` weekdays | 1–2 min |
+| `backup.yml` | every table → JSON-lines zip, 21-day artifact | Sundays `17 6` | 2–4 min |
+| `ci.yml` | ruff + the test suite | pushes to main, PRs | 3 min |
+| `probe.yml` | every job against live sources on Postgres 16 + every page | pushes to `main-vcyb9o` | 12–18 min |
 
-≈ 1650 Actions-min/month — inside the 2000-min free tier for **private** repos.
-Both take `workflow_dispatch` (manual "Run workflow" button) and share a
-`concurrency` group so they never overlap. On a **public** repo (unlimited minutes)
-widen to `*/30 * * * *` / `0 6,13,21 * * *` — the comments in each file show how.
+Secrets: `DATABASE_URL`, `SEC_UA` (Actions); `DATABASE_URL` (+ optionally
+`BIOTERM_ADMIN_PASSWORD`, `BIOTERM_SECRET_KEY`) in Streamlit secrets. API keys and alert
+channels are entered on the app's Settings page (encrypted in the database) — Actions
+reads them from there, so a key entered once works everywhere. (The encryption key
+derives from the database credentials; if you set `BIOTERM_SECRET_KEY` instead, set the
+same value as an Actions secret too.)
+
+A private repo has a monthly Actions allowance (2,000 min on GitHub Free); the schedule
+above is sized for it at ≈1,650 min/month.
+A **public** repo (unlimited minutes) or the Docker worker below lifts the ceiling
+(then the pulse can run every 5 minutes).
 
 > GitHub disables scheduled workflows after 60 days of no repo activity — a commit
 > or a manual run resets that.
 
 ## Alternatives (not the recommended path)
 
-- **VPS + Docker** — `docker compose up -d --build` here runs a `worker` (APScheduler)
-  + `dashboard`. `deploy/Dockerfile`, `deploy/docker-compose.yml`. ~$5/mo, always on.
-- **macOS launchd** — `deploy/launchd/com.bioterm.worker.plist`. Free but only alive
-  while the Mac is awake — which is what you're moving away from.
+- **VPS + Docker** — `docker compose up -d --build` here runs `worker` (APScheduler
+  refreshes + daily housekeeping), `pulse` (`bioterm worker`: the real-time layer every
+  5 minutes in market hours), `api` (read-only JSON on :8000 — set `BIOTERM_API_TOKEN`)
+  and `dashboard` (:8501). Point `DATABASE_URL` at Neon to share state with the hosted
+  app; the pulse lease keeps the Docker worker and the Actions pulse from double-firing.
+- **macOS launchd** — `deploy/launchd/com.bioterm.worker.plist` (scheduler) and
+  `com.bioterm.pulse.plist` (pulse). Free but only alive while the Mac is awake.
+
+## Backups
+
+`backup.yml` stores a zip every Sunday (Actions → backup → artifact). Restore into any
+database with `DATABASE_URL=... uv run bioterm restore bioterm-YYYYMMDD.zip [--replace]`.
+API keys are not in backups (re-enter them on Settings).
 
 ## SQLite → Postgres data copy (optional, to carry your local history over)
 

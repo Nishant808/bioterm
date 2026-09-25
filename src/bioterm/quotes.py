@@ -138,12 +138,24 @@ def parse_finnhub_quote(payload: dict) -> dict | None:
 
 
 # ---------------------------------------------------------------- providers
-def _yahoo(tickers: list[str]) -> dict[str, dict]:
+def _yahoo(tickers: list[str], chunk: int = 200) -> dict[str, dict]:
+    """Batched so the whole-sector heatmap (several hundred names) stays within one
+    request's limits; a failed batch loses only its own names."""
     import yfinance as yf
 
-    raw = yf.download(tickers, period="5d", interval="1d", group_by="ticker",
-                      auto_adjust=False, progress=False, threads=True)
-    return parse_yahoo_download(raw, tickers)
+    out: dict[str, dict] = {}
+    for i in range(0, len(tickers), chunk):
+        part = tickers[i:i + chunk]
+        try:
+            raw = yf.download(part, period="5d", interval="1d", group_by="ticker",
+                              auto_adjust=False, progress=False, threads=True)
+        except Exception as exc:  # noqa: BLE001
+            if len(tickers) <= chunk:
+                raise
+            log.warning("yahoo batch %d failed: %s", i // chunk, exc)
+            continue
+        out.update(parse_yahoo_download(raw, part))
+    return out
 
 
 def _nasdaq(ticker: str) -> dict | None:

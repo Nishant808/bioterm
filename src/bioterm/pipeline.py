@@ -225,9 +225,12 @@ def housekeeping(_: list[str] | None = None) -> dict:
     from . import maintenance
     from .process import dq, snapshots
 
-    return {"snapshots": run_job("snapshots", snapshots.run),
-            "retention": run_job("retention", maintenance.retention),
-            "dq": run_job("dq", dq.run)}
+    out = {"snapshots": run_job("snapshots", snapshots.run),
+           "retention": run_job("retention", maintenance.retention),
+           "dq": run_job("dq", dq.run)}
+    if out["dq"].get("fail"):
+        dq.notify_failures()
+    return out
 
 
 def last_runs(n: int = 30):

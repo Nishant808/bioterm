@@ -7,16 +7,18 @@
 # Secrets: DATABASE_URL, SEC_UA  (+ optional TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)
 #
 # Cadence for a PRIVATE repo (2000 Actions-min/month free tier):
-#   16:00 · 18:30 · 23:00 UTC (≈ midday, afternoon, evening New York)
-#   3 runs/day · ~5 min each · ~450 min/month
+#   weekdays 16:00 · 18:30 · 23:00 UTC (≈ midday, afternoon, evening New York),
+#   weekends once at 23:00 UTC - ~74 runs · ~6 min ≈ 450 min/month
+# Whole budget: ingest-full ~880 + this ~450 + pulse ~300 + backup ~16 ≈ 1,650.
 # On a public repo you can widen this to "*/30 * * * *" (unlimited minutes).
 
 name: ingest-fast
 
 on:
   schedule:
-    - cron: "0 16,23 * * *"
-    - cron: "30 18 * * *"
+    - cron: "0 16,23 * * 1-5"
+    - cron: "30 18 * * 1-5"
+    - cron: "0 23 * * 0,6"
   workflow_dispatch: {}
 
 concurrency:
@@ -27,6 +29,9 @@ jobs:
   fast:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # only needed if the vault key was set explicitly (see src/bioterm/vault.py)
+      BIOTERM_SECRET_KEY: ${{ secrets.BIOTERM_SECRET_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

@@ -331,3 +331,29 @@ def test_copilot_page_explains_how_to_switch_it_on():
     assert not at.exception
     assert any("Copilot is off" in (h.value or "") for h in at.get("html")) or \
         any("Settings" in str(p.label) for p in at.get("page_link"))
+
+
+def test_settings_generates_an_api_token():
+    from bioterm import vault
+
+    at = _render("settings")
+    next(b for b in at.button if b.label == "Generate a new token").click().run()
+    assert not at.exception
+    tok = vault.get("BIOTERM_API_TOKEN")
+    assert tok and len(tok) > 30
+    assert any(tok in (c.value or "") for c in at.code)
+
+
+def test_market_whole_sector_scope_and_extended_badge():
+    from bioterm.db import bulk_upsert, securities
+
+    _seed()
+    bulk_upsert(securities, [{"ticker": "XTND", "name": "Extended Bio", "tier": "extended",
+                              "sic": "2836", "is_watchlist": 0, "in_xbi": 0}])
+    at = _render("market")
+    assert not at.exception
+    at.segmented_control(key="mkt_scope").set_value("sector").run()
+    assert not at.exception
+    at = _render("stock", ticker="XTND")
+    assert not at.exception
+    assert any("Extended coverage" in (h.value or "") for h in at.get("html"))

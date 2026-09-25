@@ -213,3 +213,15 @@ def run() -> dict:
 def latest() -> pd.DataFrame:
     return _q('SELECT run_at, "check", status, count, detail FROM dq_checks '
               "WHERE run_at = (SELECT MAX(run_at) FROM dq_checks)")
+
+
+def notify_failures() -> dict:
+    """Send the failing checks to the channels routed for "dq" (Settings / Alerts)."""
+    from .. import notify
+
+    df = latest()
+    bad = df[df["status"] == "fail"] if not df.empty else df
+    if bad.empty:
+        return {}
+    lines = [f"{r.check}: {str(r.detail or '')[:220]}" for r in bad.itertuples()]
+    return notify.send_text(f"BioTerm data check failed ({len(bad)})", lines, kind="dq")

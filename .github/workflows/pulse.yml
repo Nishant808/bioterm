@@ -2,17 +2,18 @@
 # 6-K, 424B, S-3, 13D/13G), wire press releases, live movers with "why it moved",
 # then alerts to every configured channel. ~1 min.
 #
-# Hourly from 07:00 to 20:00 New York on trading days (NYSE calendar gate).
+# Every 2 hours from 07:00 to 20:00 New York on trading days (NYSE calendar gate).
 # The dashboard runs the same pulse every 5 minutes while it is awake, and
 # `bioterm worker` (deploy/) does it on an always-on host - all three share a
 # database lease, so they never double-fire.
-#   ~12 runs/day · ~21 trading days · ~1.5 min ≈ 380 Actions min/month
+#   7 runs/day · ~21 trading days · ~2 billed min ≈ 300 Actions min/month
+# Public repo (unlimited minutes): "5,35 11-23 * * 1-5" for every 30 minutes.
 
 name: pulse
 
 on:
   schedule:
-    - cron: "5 11-23 * * 1-5"
+    - cron: "5 11-23/2 * * 1-5"
   workflow_dispatch: {}
 
 concurrency:
@@ -23,6 +24,9 @@ jobs:
   pulse:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # only needed if the vault key was set explicitly (see src/bioterm/vault.py)
+      BIOTERM_SECRET_KEY: ${{ secrets.BIOTERM_SECRET_KEY }}
     steps:
       - uses: actions/checkout@v4
       - name: Gate on the NYSE calendar
