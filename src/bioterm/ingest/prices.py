@@ -50,11 +50,11 @@ def plan(tickers: list[str], period: str, backfilled: set[str],
     return {k: v for k, v in out.items() if v}
 
 
-def run(tickers: list[str] | None = None) -> dict:
+def run(tickers: list[str] | None = None, period: str | None = None) -> dict:
     from ..store import get_meta, set_meta
 
     cfg = load_settings()
-    period = cfg.get("price_history_period", default="5y")
+    period = period or cfg.get("price_history_period", default="5y")
     tickers = list(dict.fromkeys((tickers or universe_tickers()) + cfg.benchmarks))
     backfilled = set(get_meta(f"prices_backfilled_{period}", []) or [])
     total = 0

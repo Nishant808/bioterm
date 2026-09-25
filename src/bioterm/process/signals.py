@@ -724,7 +724,7 @@ def run() -> dict:
     det = cfg.get("signals", "detectors", default={}) or {}
     today = date.today()
     now = datetime.now(timezone.utc)
-    universe = read_sql("SELECT ticker FROM securities")
+    universe = read_sql("SELECT ticker FROM securities WHERE tier IS NULL OR tier = 'core'")
     if universe.empty:
         return {"rows": 0}
     tickers = universe["ticker"].tolist()

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS always-on live pulse (while the Mac is awake): trading halts, new SEC filings,
+  wire headlines and big movers every 5 minutes in market hours, with their alerts.
+  A lease in the database keeps it from double-firing with the GitHub Actions pulse.
+
+    cp deploy/launchd/com.bioterm.pulse.plist ~/Library/LaunchAgents/
+    # edit the paths below to match your checkout, then:
+    launchctl load ~/Library/LaunchAgents/com.bioterm.pulse.plist
+    # stop: launchctl unload ~/Library/LaunchAgents/com.bioterm.pulse.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.bioterm.pulse</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/nishantthalwal/Desktop/cld/.venv/bin/bioterm</string>
+        <string>worker</string>
+        <string>--interval</string>
+        <string>300</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/nishantthalwal/Desktop/cld</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>BIOTERM_SEC_USER_AGENT</key>
+        <string>BioTerm/0.1 (nishantthalwal@gmail.com)</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/nishantthalwal/Desktop/cld/data/pulse.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/nishantthalwal/Desktop/cld/data/pulse.err.log</string>
+</dict>
+</plist>

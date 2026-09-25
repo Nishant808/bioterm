@@ -59,7 +59,8 @@ def ingest(
                                       "clinical,fda,insiders,shortvol,institutions,molecules,"
                                       "options,halts,filingslive,news,sentiment,finbert,pdufa,"
                                       "ai,catalysts,mollinks,score,signals,backtest,"
-                                      "outcomes,landscape,whole13f,drugs,gov,etf"),
+                                      "outcomes,landscape,whole13f,drugs,gov,etf,"
+                                      "sicuniverse,extended,snapshots,dq"),
     preset: str = typer.Option("", help="'fast' (news+score, frequent cron), 'open' "
                                         "(prices+news+score, the US open) or 'full' "
                                         "(everything, after the close)"),
@@ -116,12 +117,17 @@ def ingest(
             "drugs": lambda: pipeline.run_job("drugs", _m("ingest.drugs").run),
             "gov": lambda: pipeline.run_job("gov", _m("ingest.gov").run),
             "etf": lambda: pipeline.run_job("etf", _m("ingest.etf").run),
+            "sicuniverse": lambda: pipeline.run_job("sic_universe", _m("ingest.sic_universe").run),
+            "extended": lambda: pipeline.refresh_extended(),
+            "snapshots": lambda: pipeline.run_job("snapshots", _m("process.snapshots").run),
+            "dq": lambda: pipeline.run_job("dq", _m("process.dq").run),
         }
         for name in ["prices", "technicals", "edgar", "fundamentals", "clinical",
                      "fda", "insiders", "shortvol", "institutions", "molecules", "options",
                      "halts", "filingslive", "news", "sentiment", "finbert", "pdufa", "ai",
                      "catalysts", "mollinks", "score", "signals", "backtest", "outcomes",
-                     "landscape", "whole13f", "drugs", "gov", "etf"]:
+                     "landscape", "whole13f", "drugs", "gov", "etf", "sicuniverse",
+                     "extended", "snapshots", "dq"]:
             if name in wanted:
                 console.rule(name)
                 console.print(jobmap[name]())
@@ -324,6 +330,81 @@ def serve(port: int = 8501) -> None:
          "--server.port", str(port), "--server.headless", "true"],
         check=False,
     )
+
+
+@app.command()
+def backup(out: str = typer.Option("", help="zip path (default backups/bioterm-<date>.zip)"),
+           include_secrets: bool = typer.Option(False, help="also the encrypted API keys "
+                                                           "and the owner passcode hash")) -> None:
+    """Back up every table to a zip of JSON-lines files (+ manifest)."""
+    from datetime import date
+
+    from .maintenance import backup as do_backup
+
+    console.print(do_backup(out or f"backups/bioterm-{date.today():%Y%m%d}.zip",
+                            include_secrets=include_secrets))
+
+
+@app.command()
+def restore(path: str,
+            tables: str = typer.Option("", help="comma list (default: every table)"),
+            replace: bool = typer.Option(False, help="empty each table before loading")) -> None:
+    """Load a backup zip into the configured database."""
+    from .maintenance import restore as do_restore
+
+    console.print(do_restore(path, [t for t in tables.split(",") if t] or None,
+                             replace=replace))
+
+
+@app.command()
+def retention(dry_run: bool = typer.Option(False, help="count, don't delete")) -> None:
+    """Prune tables that grow without bound (windows: settings.yml retention:) and
+    print the database size."""
+    from .maintenance import db_size, retention as do_retention
+
+    console.print(do_retention(dry_run=dry_run))
+    sz = db_size()
+    console.print(f"database: {sz['bytes'] / 1e6:,.1f} MB ({sz['dialect']})")
+    for t in sz["tables"][:12]:
+        console.print(f"  {t['name']:24s} {t['bytes'] / 1e6:8.1f} MB  ~{t['approx_rows']:,} rows")
+
+
+@app.command()
+def backfill(what: str = typer.Argument(..., help="prices | outcomes | institutions"),
+             period: str = typer.Option("10y", help="prices: history to pull"),
+             tickers: str = typer.Option("", help="prices: comma list (default: core)")) -> None:
+    """Re-pull history a normal run only tops up."""
+    from .maintenance import backfill as do_backfill
+    from .pipeline import run_job
+
+    tks = [t.strip().upper() for t in tickers.split(",") if t.strip()] or None
+    console.print(run_job(f"backfill_{what}", do_backfill, what, period=period, tickers=tks))
+
+
+@app.command()
+def dq() -> None:
+    """Run the data-quality checks and print them."""
+    from .pipeline import run_job
+    from .process import dq as dq_mod
+
+    console.print(run_job("dq", dq_mod.run))
+    for r in dq_mod.latest().itertuples():
+        colour = {"ok": "green", "warn": "yellow", "fail": "red"}.get(r.status, "white")
+        console.print(f"[{colour}]{r.status.upper():4s}[/{colour}] {r.check}: {r.detail}")
+
+
+@app.command()
+def api(host: str = typer.Option("127.0.0.1"), port: int = typer.Option(8000)) -> None:
+    """Serve the read-only JSON API (needs the api extra: pip install bioterm[api]).
+    Every call needs `Authorization: Bearer $BIOTERM_API_TOKEN`."""
+    try:
+        import uvicorn
+    except ImportError:
+        console.print("[red]install the api extra first: uv pip install -e '.[api]'[/red]")
+        raise typer.Exit(1)
+    from .api import create_app
+
+    uvicorn.run(create_app(), host=host, port=port)
 
 
 @app.command()

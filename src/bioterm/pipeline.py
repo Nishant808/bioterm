@@ -62,6 +62,31 @@ def refresh_universe(force: bool = False) -> dict:
     return run_job("universe", _universe)
 
 
+def refresh_extended(_: list[str] | None = None, per_run: int | None = None) -> dict:
+    """Light coverage of the extended tier (the rest of US-listed biopharma by SIC
+    code): prices + technicals for every name, EDGAR + fundamentals for a rotating
+    slice (``universe.extended_per_run`` a run, so each name refreshes every few
+    days). Scores, signals and the heavy per-name sources stay on core."""
+    from .config import load_settings
+    from .universe import extended_slice
+
+    ext = universe_tickers(tier="extended")
+    if not ext:
+        return {"skipped": "no extended names - the weekly SIC crawl adds them"}
+    n = per_run if per_run is not None else int(
+        load_settings().get("universe", "extended_per_run", default=40))
+    out = {"names": len(ext),
+           # 2 years is enough for the 200-day average and 52-week range, and keeps
+           # a few hundred extra names inside Neon's free 512 MB
+           "prices": run_job("prices_ext", prices.run, ext, "2y"),
+           "technicals": run_job("technicals_ext", technicals.run, ext)}
+    sl = extended_slice(n, "fundamentals")
+    if sl:
+        out["edgar"] = run_job("edgar_ext", edgar.run, sl)
+        out["fundamentals"] = run_job("fundamentals_ext", ingest_fundamentals.run, sl)
+    return out
+
+
 def refresh_market(tickers: list[str] | None = None) -> dict:
     out = {}
     out["prices"] = run_job("prices", prices.run, tickers)
@@ -168,6 +193,9 @@ def run_full_refresh(limit: int | None = None, skip_universe: bool = False) -> d
     init_db()
     if not skip_universe:
         refresh_universe(force=False)
+        from .ingest import sic_universe
+
+        _weekly("sic_universe", sic_universe.run)
     tickers = universe_tickers(limit=limit)
     log.info("full refresh over %d tickers", len(tickers))
     results = {
@@ -184,8 +212,22 @@ def run_full_refresh(limit: int | None = None, skip_universe: bool = False) -> d
         "recompute": recompute(),
         "backtest": run_backtest(),
         "research": refresh_research(),
+        # last: the extended tier never delays anything core
+        "extended": refresh_extended() if not limit else {"skipped": "limited run"},
+        "housekeeping": housekeeping(),
     }
     return results
+
+
+def housekeeping(_: list[str] | None = None) -> dict:
+    """Point-in-time snapshots, retention (Neon's 512 MB) and the data-quality
+    checks - after everything else so the checks see this run's data."""
+    from . import maintenance
+    from .process import dq, snapshots
+
+    return {"snapshots": run_job("snapshots", snapshots.run),
+            "retention": run_job("retention", maintenance.retention),
+            "dq": run_job("dq", dq.run)}
 
 
 def last_runs(n: int = 30):

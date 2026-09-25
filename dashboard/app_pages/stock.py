@@ -73,6 +73,10 @@ if int(meta.get("in_xbi") or 0) == 1:
     badges.append("<span class='bt-badge'>XBI member</span>")
 if rq_ok and rq < 4:
     badges.append("<span class='bt-badge red'>Short cash runway</span>")
+TIER = str(meta.get("tier") or "core")
+if TIER != "core":
+    badges.append("<span class='bt-badge'>Extended coverage</span>" if TIER == "extended"
+                  else "<span class='bt-badge'>No longer covered</span>")
 with st.container(horizontal=True, vertical_alignment="center", gap="small"):
     st.html(f"<div class='bt-hero'><span class='bt-hero-tk'>{esc(ticker)}</span>"
             f"<span class='bt-hero-name'>{esc(display_name(meta['name']))}</span>"
@@ -88,6 +92,11 @@ with st.container(horizontal=True, vertical_alignment="center", gap="small"):
                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                        icon=":material/table_view:", type="tertiary", key="ts_xlsx",
                        help="Every section as its own sheet")
+
+if TIER == "extended":
+    st.caption(f"Extended-tier name (SEC industry code {meta.get('sic') or '—'}): prices, "
+               "fundamentals and filings are tracked; the Focus Score, signals, news and "
+               "trial coverage start when you add it to the watchlist.")
 
 # ------------------------------------------------------------------ KPIs
 hist = score_history(ticker)
@@ -733,6 +742,26 @@ with tab_flow:
                 fig.update_layout(**plotly_layout(height=260, hovermode="x unified"))
                 fig.update_yaxes(tickformat=".0%", range=[0, 1])
                 chart(fig, key="short_series")
+        with card("Short interest trend", icon_name="stacked_line_chart",
+                  meta="% of float · daily snapshots"):
+            from bioterm.process.snapshots import history as _snap_hist
+
+            try:
+                sh = _snap_hist(ticker)
+            except Exception:  # noqa: BLE001 - older database without the table
+                sh = pd.DataFrame()
+            sh = sh.dropna(subset=["short_percent_float"]) if not sh.empty else sh
+            if len(sh) < 2:
+                st.caption("Builds up from the daily point-in-time snapshots - two or more "
+                           "days are needed for a trend.")
+            else:
+                fig = go.Figure(go.Scatter(x=sh["asof"], y=sh["short_percent_float"],
+                                           mode="lines+markers", name="Short % float",
+                                           line=dict(color=ACCENT, width=2),
+                                           hovertemplate="%{y:.1%}"))
+                fig.update_layout(**plotly_layout(height=220, hovermode="x unified"))
+                fig.update_yaxes(tickformat=".0%")
+                chart(fig, key="short_interest_trend")
 
 # ---- filings
 with tab_bs:

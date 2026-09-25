@@ -125,7 +125,8 @@ def build_universe(force: bool = False) -> pd.DataFrame:
     ucfg = cfg.raw.get("universe", {})
 
     if not force:
-        existing = read_sql("SELECT * FROM securities")
+        # age of the core list only - the SIC crawl stamps extended rows separately
+        existing = read_sql("SELECT * FROM securities WHERE (tier IS NULL OR tier = 'core')")
         if not existing.empty and "updated_at" in existing:
             last = pd.to_datetime(existing["updated_at"], errors="coerce", utc=True).max()
             if pd.notna(last):
@@ -156,6 +157,7 @@ def build_universe(force: bool = False) -> pd.DataFrame:
                 "ticker": ticker, "name": name or ticker, "exchange": None, "cik": None,
                 "is_watchlist": 0, "in_xbi": 0, "in_ibb": 0, "in_seed": 0,
                 "etf_weight": None, "updated_at": datetime.now(timezone.utc),
+                "tier": "core",
             },
         )
         if name and (not rec["name"] or rec["name"] == ticker):
@@ -186,7 +188,21 @@ def build_universe(force: bool = False) -> pd.DataFrame:
     if not rows:
         raise RuntimeError("universe is empty - all sources failed and no seed/watchlist")
 
-    bulk_upsert(securities, rows)
+    # keep what other jobs own (cik from EDGAR, sic from the SIC crawl) - a rebuild
+    # only restates membership. A name that left every core source keeps its row
+    # (history, open positions) but drops to the extended tier.
+    for r in rows:
+        r.pop("cik", None)
+    bulk_upsert(securities, rows,
+                update_only=[k for k in rows[0] if k not in ("ticker", "exchange")])
+    # only when XBI itself came back - a failed download must not demote its members
+    gone = read_sql("SELECT ticker FROM securities WHERE (tier IS NULL OR tier = 'core')")
+    stale = sorted(set(gone["ticker"]) - set(records)) if "xbi" in frames else []
+    if stale:
+        bulk_upsert(securities, [{"ticker": t, "tier": "extended", "in_xbi": 0, "in_ibb": 0,
+                                  "in_seed": 0, "is_watchlist": 0} for t in stale],
+                    update_only=["tier", "in_xbi", "in_ibb", "in_seed", "is_watchlist"])
+        log.info("universe: %d names left the core sources -> extended", len(stale))
     df = pd.DataFrame(rows)
     log.info(
         "universe built: %d tickers (xbi=%d ibb=%d seed=%d watchlist=%d)",
@@ -196,19 +212,50 @@ def build_universe(force: bool = False) -> pd.DataFrame:
     return df
 
 
-def universe_tickers(limit: int | None = None) -> list[str]:
-    df = read_sql("SELECT ticker, is_watchlist, etf_weight FROM securities")
+CORE_SQL = "(tier IS NULL OR tier = 'core')"
+
+
+def universe_tickers(limit: int | None = None, tier: str = "core") -> list[str]:
+    """Tickers to cover, watchlist first then by ETF weight. ``tier``: "core" (XBI +
+    seed + watchlist - every job), "extended" (the rest of US-listed biopharma by SIC
+    code - light coverage) or "all"."""
+    df = read_sql("SELECT ticker, is_watchlist, etf_weight, tier FROM securities")
     if df.empty:
         df = build_universe()
+    t = df["tier"] if "tier" in df else pd.Series(None, index=df.index, dtype=object)
+    core = t.isna() | (t == "core")
+    if tier == "core":
+        df = df[core]
+    elif tier == "extended":
+        df = df[t == "extended"]
+    else:
+        df = df[core | (t == "extended")]
+    df = df.copy()
     # watchlist first, then by ETF weight desc, then alpha
     df["etf_weight"] = pd.to_numeric(df["etf_weight"], errors="coerce").fillna(0.0)
     df = df.sort_values(
         ["is_watchlist", "etf_weight", "ticker"], ascending=[False, False, True]
     )
     tickers = df["ticker"].tolist()
-    cfg_limit = load_settings().universe_limit
+    cfg_limit = load_settings().universe_limit if tier == "core" else None
     if limit:
         tickers = tickers[:limit]
     elif cfg_limit:
         tickers = tickers[:cfg_limit]
     return tickers
+
+
+def extended_slice(n: int, key: str) -> list[str]:
+    """The next ``n`` extended names for a rotating job (``key`` names the cursor in
+    app_meta), so every extended name is refreshed every len/n runs."""
+    from .store import get_meta, set_meta
+
+    ext = sorted(universe_tickers(tier="extended"))
+    if not ext or n <= 0:
+        return []
+    cur = (get_meta("extended_cursor", {}) or {})
+    start = int(cur.get(key, 0) or 0) % len(ext)
+    out = (ext[start:] + ext[:start])[:n]
+    cur[key] = (start + len(out)) % len(ext)
+    set_meta("extended_cursor", cur)
+    return out

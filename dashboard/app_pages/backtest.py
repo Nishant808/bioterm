@@ -199,12 +199,40 @@ with card("Live track record", icon_name="fact_check",
         st.caption("One observation per change of call (a label held for weeks counts once). "
                    "Excess is vs the equal-weight universe over the same window.")
 
+# ------------------------------------------------------------------ live detectors
+det = backtest_result("detectors")
+with card("Live detector record", icon_name="biotech",
+          meta="every detector that fired in production, followed forward"):
+    bc = det.get("by_code") or {}
+    if not bc:
+        empty_state("No detector firings scored yet",
+                    "Each firing is scored once a week, a month and three months have "
+                    "passed - including the event detectors (catalyst setups, dilution, "
+                    "insiders, 13F, news) that have no price-only history.", "hourglass_top")
+    else:
+        drows = []
+        for code, v in bc.items():
+            drows.append({"Detector": detector_name(code), "Side": v.get("side"),
+                          "Firings": v.get("n"),
+                          **{f"Excess {HNAME.get(h, h)}": v.get(f"x_{h}") for h in (5, 21, 63)},
+                          **{f"Hit {HNAME.get(h, h)}": v.get(f"hit_{h}") for h in (5, 21, 63)},
+                          "t (1 month)": v.get("t_21")})
+        dtbl = pd.DataFrame(drows).sort_values("Firings", ascending=False)
+        st.dataframe(dtbl, hide_index=True, width="stretch", column_config={
+            **{c: st.column_config.NumberColumn(format="percent") for c in dtbl
+               if c.startswith(("Excess", "Hit"))},
+            "t (1 month)": st.column_config.NumberColumn(format="%.2f")})
+        st.caption(f"A detector that stays on for a name counts again only after a "
+                   f"{det.get('gap_days', 10)}-day pause. Excess is vs the equal-weight "
+                   "universe; hit = share of firings that went the called way.")
+
 with st.expander("What this can and can't tell you", icon=":material/info:"):
     st.markdown(
         "- **Point-in-time:** every feature on a date uses prices up to that date only; "
         "future closes are used purely as the outcome.\n"
         "- **Survivorship bias:** the universe is today's XBI membership. Names that failed "
-        "and were dropped are missing, which flatters long-side results.\n"
+        "and were dropped are missing, which flatters long-side results. Membership is now "
+        "snapshotted daily, so tests from here on can use the universe as it stood.\n"
         "- **What's tested:** price and volume detectors and the momentum factor have years "
         "of history. News, filings, insider, 13F, options and catalyst detectors are only "
         "scored live (the track record) — their history wasn't captured point-in-time.\n"

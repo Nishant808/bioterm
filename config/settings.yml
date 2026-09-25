@@ -12,6 +12,11 @@ universe:
   use_seed: true             # bundled large-cap pharma list (config/universe_seed.yml)
   include_watchlist: true    # always include everything in config/watchlist.yml
   refresh_days: 7            # rebuild the universe at most this often
+  # extended tier: every other US-listed company SEC files under these SIC codes
+  # (pharma preparations, diagnostics, biologicals, commercial research). Weekly crawl;
+  # light coverage only - prices + technicals daily, EDGAR + fundamentals rotating.
+  sic_codes: ["2834", "2835", "2836", "8731"]
+  extended_per_run: 40       # extended names given EDGAR + fundamentals per full run
 
 ingest:
   clinical_max_sponsors_per_run: 400   # ClinicalTrials.gov calls per clinical run

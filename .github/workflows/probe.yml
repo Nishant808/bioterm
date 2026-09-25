@@ -76,6 +76,31 @@ jobs:
         run: uv run bioterm ingest --only catalysts,mollinks,score,signals,backtest,insiders
       - name: Research (outcomes, landscape, 13F data sets, drugs, gov, ETF flows)
         run: uv run bioterm ingest --only outcomes,landscape,whole13f,drugs,gov,etf
+      - name: Platform (SIC universe, extended tier, snapshots, retention, DQ, backup, API)
+        run: |
+          uv pip install "fastapi>=0.115" "httpx>=0.27"
+          uv run bioterm ingest --only sicuniverse
+          uv run python - <<'EOF'
+          from bioterm import pipeline
+          print(pipeline.refresh_extended(per_run=8))
+          print(pipeline.housekeeping())
+          EOF
+          uv run bioterm retention --dry-run
+          uv run bioterm backup --out /tmp/probe-backup.zip
+          uv run python - <<'EOF'
+          import os
+          from fastapi.testclient import TestClient
+          from bioterm.api import create_app
+          os.environ["BIOTERM_API_TOKEN"] = "probe"
+          c = TestClient(create_app())
+          h = {"Authorization": "Bearer probe"}
+          for path in ["/health", "/universe?tier=all", "/scores", "/signals", "/catalysts",
+                       "/stock/VRTX", "/screen?preset=Dilution%20risk", "/alerts", "/dq"]:
+              r = c.get(path, headers=h)
+              body = r.json()
+              print(path, r.status_code, len(body) if isinstance(body, list) else list(body)[:6])
+              assert r.status_code in (200, 404), (path, r.status_code, r.text[:300])
+          EOF
       - name: Report
         if: always()
         run: |
@@ -135,6 +160,11 @@ jobs:
           q("gov awards", "SELECT ticker, agency, sub_agency, amount, start_date, award_type FROM gov_awards ORDER BY amount DESC LIMIT 15")
           q("ETF flows", "SELECT etf, date, nav, shares_out, aum/1e6 AS aum_m, flow_est/1e6 AS flow_m FROM etf_flows ORDER BY date DESC LIMIT 10")
           q("fundamentals overhang", "SELECT ticker, shares_out, xbrl_shares_out, warrants_out, options_out, total_debt FROM fundamentals WHERE warrants_out IS NOT NULL OR total_debt IS NOT NULL LIMIT 15")
+          q("tiers", "SELECT COALESCE(tier, 'core') AS tier, sic, COUNT(*) AS n FROM securities GROUP BY COALESCE(tier, 'core'), sic ORDER BY n DESC")
+          q("extended sample", "SELECT ticker, name, exchange, cik, sic FROM securities WHERE tier = 'extended' ORDER BY ticker LIMIT 25")
+          q("extended prices", "SELECT COUNT(DISTINCT p.ticker) AS names, COUNT(*) AS rows FROM prices p JOIN securities s ON s.ticker = p.ticker WHERE s.tier = 'extended'")
+          q("snapshots", "SELECT 'fundamental' AS kind, COUNT(*) AS n FROM fundamental_snapshots UNION ALL SELECT 'catalyst', COUNT(*) FROM catalyst_snapshots UNION ALL SELECT 'universe', COUNT(*) FROM universe_snapshots")
+          q("dq checks", 'SELECT "check", status, count, substr(detail, 1, 160) AS detail FROM dq_checks ORDER BY status, "check"')
           try:
               from bioterm.process import backtest as bt
               from bioterm.process import smart_money as sm
@@ -197,7 +227,9 @@ jobs:
           from bioterm.db import read_sql
           for t in ["halts", "filings", "news", "news_llm", "catalysts", "trial_changes",
                     "catalyst_events", "landscape_trials", "inst_ownership", "loe_calendar",
-                    "faers_counts", "gov_awards", "etf_flows", "signal_scores"]:
+                    "faers_counts", "gov_awards", "etf_flows", "signal_scores",
+                    "fundamental_snapshots", "catalyst_snapshots", "universe_snapshots",
+                    "dq_checks"]:
               try:
                   print(f"{t:18s}", int(read_sql(f"SELECT COUNT(*) AS n FROM {t}").iloc[0]["n"]))
               except Exception as e:

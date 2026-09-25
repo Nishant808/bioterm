@@ -43,7 +43,7 @@ def test_forward_returns_are_future_only():
     assert f["fwd_2"].iloc[-2:].isna().all()          # no future -> no label
 
 
-def test_run_writes_all_three_studies_and_finds_momentum():
+def test_run_writes_all_studies_and_finds_momentum():
     days = _seed()
     # a couple of historical calls for the track record
     bulk_upsert(signal_scores, [
@@ -58,9 +58,9 @@ def test_run_writes_all_three_studies_and_finds_momentum():
          "close": float(closes[t])} for t, lab, n in (("T19", "BUY", 0.4), ("T00", "SELL", -0.4))])
 
     out = bt.run()
-    assert out["rows"] == 3 and out["names"] == 20
+    assert out["rows"] == 4 and out["names"] == 20
     kinds = set(read_sql("SELECT kind FROM backtests")["kind"])
-    assert kinds == {"events", "factor", "track"}
+    assert kinds == {"events", "factor", "track", "detectors"}
 
     fac = bt.latest("factor")
     mom = fac["factors"]["momentum"]

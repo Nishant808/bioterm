@@ -51,6 +51,8 @@ CATALOG: dict[str, tuple[str, str, str]] = {
     "SMTP_PASSWORD": ("SMTP password", "notify", "App password"),
     "SMTP_FROM": ("Email from", "notify", "Sender address"),
     "SMTP_TO": ("Email to", "notify", "Recipient address(es), comma separated"),
+    "BIOTERM_API_TOKEN": ("API token", "system", "Bearer token for the read-only JSON API "
+                                                 "(`bioterm api`) - every call needs it"),
 }
 
 _CACHE: dict[str, tuple[float, str | None]] = {}

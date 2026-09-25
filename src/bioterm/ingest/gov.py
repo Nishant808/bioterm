@@ -64,7 +64,8 @@ def run(max_companies: int = 40, years: int = 5, budget_s: float = 150) -> dict[
     from ..util import company_key
 
     secs = read_sql("SELECT s.ticker, s.name, sc.rank FROM securities s LEFT JOIN scores sc "
-                    "ON sc.ticker = s.ticker AND sc.asof = (SELECT MAX(asof) FROM scores)")
+                    "ON sc.ticker = s.ticker AND sc.asof = (SELECT MAX(asof) FROM scores) "
+                    "WHERE s.tier IS NULL OR s.tier = 'core'")
     wl = {w["ticker"].upper() for w in get_watchlist()}
     secs["pri"] = secs["ticker"].map(lambda t: 0 if t in wl else 1)
     secs = secs.sort_values(["pri", "rank"], na_position="last")

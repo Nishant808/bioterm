@@ -7,7 +7,8 @@ Cadence (all configurable here):
   * news + sentiment           every 15 min
   * clinical trials            daily 07:10 UTC
   * fundamentals + EDGAR       daily 07:40 UTC
-  * universe rebuild           Monday 06:30 UTC
+  * universe rebuild           Monday 06:30 UTC (+ the SIC-code extended tier)
+  * extended tier + housekeeping  daily 08:20 UTC (snapshots, retention, DQ checks)
   * catalysts + Focus Score    5 min past every news/market/clinical job (via listener)
 
 On a laptop this only runs while the machine is awake; for true 24/7 use the
@@ -60,7 +61,16 @@ def _fundamentals_job() -> None:
 
 
 def _universe_job() -> None:
+    from .ingest import sic_universe
+
     pipeline.refresh_universe(force=True)
+    pipeline.run_job("sic_universe", sic_universe.run)
+
+
+def _daily_job() -> None:
+    pipeline.refresh_extended()
+    pipeline.run_backtest()
+    pipeline.housekeeping()
 
 
 def build_scheduler() -> BlockingScheduler:
@@ -77,6 +87,8 @@ def build_scheduler() -> BlockingScheduler:
                   max_instances=1, coalesce=True)
     sched.add_job(_universe_job, CronTrigger(day_of_week="mon", hour=6, minute=30),
                   id="universe", max_instances=1, coalesce=True)
+    sched.add_job(_daily_job, CronTrigger(hour=8, minute=20), id="daily",
+                  max_instances=1, coalesce=True)
     return sched
 
 

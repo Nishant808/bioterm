@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+  <feed xmlns="http://www.w3.org/2005/Atom">
+    <author>
+      <email>webmaster@sec.gov</email>
+      <name>Webmaster</name>
+    </author>
+    <entry title="ARRAY(0x5627c9a6ea60)">
+      <content type="text/xml">
+        <company-info name="ARRAY(0x5627c9a745c8)">
+          <addresses>
+            <address type="business">
+              <state>NJ</state>
+            </address>
+            <address type="mailing" />
+          </addresses>
+          <cik>0000857171</cik>
+          <irs-number>
+            <former-name-0 DATE="2001-03-02" NAME="DYNAGEN INC" />
+          </irs-number>
+          <sic>2835</sic>
+          <state>NJ</state>
+        </company-info>
+      </content>
+      <id>urn:tag:www.sec.gov:cik=0000857171</id>
+      <link href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;CIK=0000857171&amp;owner=exclude&amp;hidefilings=0" type="text/html" />
+      <summary type="html">&lt;strong&gt;CIK:&lt;/strong&gt; 0000857171, &lt;strong&gt;State:&lt;/strong&gt; NJ</summary>
+      <updated>2026-09-25T07:47:59-04:00</updated>
+    </entry>
+    <entry title="ARRAY(0x5627c9a74118)">
+      <content type="text/xml">
+        <company-info name="ARRAY(0x5627c9acc8c0)">
+          <addresses>
+            <address type="business">
+              <state>WA</state>
+            </address>
+            <address type="mailing" />
+          </addresses>
+          <cik>0000949858</cik>
+          <irs-number>
+            <former-name-0 DATE="2017-07-31" NAME="ONCOGENEX PHARMACEUTICALS, INC." />
+            <former-name-1 DATE="2008-08-07" NAME="SONUS PHARMACEUTICALS INC" />
+          </irs-number>
+          <last-date>03 Life Sciences</last-date>
+          <sic>2835</sic>
+          <state>WA</state>
+        </company-info>
+      </content>
+      <id>urn:tag:www.sec.gov:cik=0000949858</id>
+      <link href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;CIK=0000949858&amp;owner=exclude&amp;hidefilings=0" type="text/html" />
+      <summary type="html">&lt;strong&gt;CIK:&lt;/strong&gt; 0000949858, &lt;strong&gt;State:&lt;/strong&gt; WA</summary>
+      <updated>2026-09-25T07:47:59-04:00</updated>
+    </entry>
+    <entry title="ARRAY(0x5627c9a74478)">
+      <content type="text/xml">
+        <company-info name="ARRAY(0x5627c9ae2ab0)">
+          <addresses>
+            <address type="business">
+              <state>CA</state>
+            </address>
+            <address type="mailing" />
+          </addresses>
+          <cik>0000834306</cik>
+          <irs-number>
+            <former-name-0 DATE="2003-05-15" NAME="BIOSITE DIAGNOSTICS INC" />
+          </irs-number>
+          <sic>2835</sic>
+          <state>CA</state>
+        </company-info>
+      </content>
+      <id>urn:tag:www.sec.gov:cik=0000834306</id>
+      <link href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;CIK=0000834306&amp;owner=exclude&amp;hidefilings=0" type="text/html" />
+      <summary type="html">&lt;strong&gt;CIK:&lt;/strong&gt; 0000834306, &lt;strong&gt;State:&lt;/strong&gt; CA</summary>
+      <updated>2026-09-25T07:47:59-04:00</updated>
+    </entry>
+    <id>https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;SIC=2835&amp;owner=include&amp;count=10</id>
+    <link href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;SIC=2835&amp;owner=include&amp;count=10&amp;start=0&amp;output=atom" rel="self" type="application/atom+xml" />
+    <link href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;SIC=2835&amp;owner=include&amp;count=10&amp;start=0" rel="alternate" type="text/html" />
+    <link href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;SIC=2835&amp;owner=include&amp;count=10&amp;output=atom&amp;start=10" rel="next" type="application/atom+xml" />
+    <title>Company Search Feed</title>
+    <updated>2026-09-25T07:47:59-04:00</updated>
+  </feed>

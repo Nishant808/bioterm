@@ -19,17 +19,21 @@ BUCKETS = [(200e9, "Mega cap"), (10e9, "Large cap"), (2e9, "Mid cap"), (3e8, "Sm
            (0, "Micro cap")]
 
 
+SCOPES = {"core": "s.tier IS NULL OR s.tier = 'core'",
+          "sector": "s.tier IS NULL OR s.tier IN ('core', 'extended')"}
+
+
 @st.cache_data(ttl=300, show_spinner=False)
-def _universe() -> pd.DataFrame:
+def _universe(scope: str) -> pd.DataFrame:
     return q("SELECT s.ticker, s.name, f.market_cap FROM securities s "
-             "LEFT JOIN fundamentals f ON f.ticker = s.ticker "
-             "WHERE s.tier IS NULL OR s.tier = 'core'")
+             "LEFT JOIN fundamentals f ON f.ticker = s.ticker WHERE " + SCOPES[scope])
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def _tech() -> pd.DataFrame:
-    return q("SELECT ticker, close, sma50, sma200, pct_52w_range FROM technicals "
-             "WHERE date = (SELECT MAX(date) FROM technicals)")
+def _tech(scope: str) -> pd.DataFrame:
+    return q("SELECT t.ticker, t.close, t.sma50, t.sma200, t.pct_52w_range FROM technicals t "
+             "JOIN securities s ON s.ticker = t.ticker WHERE t.date = (SELECT MAX(date) "
+             "FROM technicals) AND (" + SCOPES[scope] + ")")
 
 
 @st.cache_data(ttl=120, show_spinner=False)
@@ -39,7 +43,13 @@ def _why(ticker: str) -> list[dict]:
     return why(ticker, hours=36, limit=3)
 
 
-uni = _universe()
+scope = st.segmented_control(
+    "Scope", ["core", "sector"], default="core", required=True, key="mkt_scope",
+    format_func={"core": "Core universe", "sector": "Whole sector (SEC industry codes)"}.get,
+    help="Core = XBI members, the seed list and your watchlist. Whole sector adds every "
+         "other US-listed company filing under the pharma, biologicals, diagnostics and "
+         "research SIC codes (slower: several hundred live quotes).")
+uni = _universe(scope)
 if uni.empty:
     empty_state("No universe yet", "The first data refresh builds it.", "grid_view")
     st.stop()
@@ -52,7 +62,7 @@ df = uni.assign(price=uni["ticker"].map(lambda t: (quotes.get(t) or {}).get("pri
 df = df.dropna(subset=["chg"])
 live_share = (df["src"] == "live").mean() if not df.empty else 0
 
-tech = _tech()
+tech = _tech(scope)
 adv, dec = int((df["chg"] > 0).sum()), int((df["chg"] < 0).sum())
 xbi, ibb = quotes.get("XBI") or {}, quotes.get("IBB") or {}
 with kpi_row(4, "mkt"):

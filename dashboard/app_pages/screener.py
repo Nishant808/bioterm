@@ -113,7 +113,8 @@ with kpi_row(4, "scr"):
               int(res["binary_within_90d"].fillna(False).sum()) if not res.empty else 0,
               border=True)
 
-COLS = ["ticker", "name", "market_cap", "ev", "runway_quarters", "signal", "focus_rank",
+COLS = ["ticker", "name", "coverage", "market_cap", "ev", "runway_quarters", "signal",
+        "focus_rank",
         "next_catalyst_days", "next_catalyst_type", "top_phase", "dilution_risk",
         "takeout_score", "funds_net", "short_pct_float", "ret_3m"]
 with card("Results", icon_name="table_rows", meta="click a column to sort"):
@@ -126,6 +127,8 @@ with card("Results", icon_name="table_rows", meta="click a column to sort"):
             "open": st.column_config.LinkColumn("", display_text="Open", width=60),
             "ticker": st.column_config.TextColumn("Ticker", width=72),
             "name": st.column_config.TextColumn("Company", width="medium"),
+            "coverage": st.column_config.TextColumn("Coverage", width=80,
+                                                    help=sc.FIELDS["coverage"][2]),
             "market_cap": st.column_config.NumberColumn("Mkt cap", format="compact"),
             "ev": st.column_config.NumberColumn("EV", format="compact"),
             "runway_quarters": st.column_config.NumberColumn("Runway q", format="%.1f"),

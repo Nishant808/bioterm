@@ -45,7 +45,8 @@ def load_features(min_rows: int = 150) -> tuple[dict[str, pd.DataFrame], pd.Data
     if px.empty:
         return {}, None
     px["date"] = pd.to_datetime(px["date"])
-    uni = set(read_sql("SELECT ticker FROM securities")["ticker"])
+    uni = set(read_sql("SELECT ticker FROM securities "
+                       "WHERE tier IS NULL OR tier = 'core'")["ticker"])
     bench_tk = load_settings().get("signals", "regime_benchmark", default="XBI")
     feats, bench = {}, None
     for tk, g in px.groupby("ticker"):
@@ -290,6 +291,59 @@ def track_record(horizons: tuple[int, ...] = (5, 21, 63)) -> dict:
             "recent": recent.to_dict("records")}
 
 
+def detector_record(horizons: tuple[int, ...] = (5, 21, 63), gap_days: int = 10) -> dict:
+    """Live per-detector study: every detector that fired in production (the event
+    families included - catalyst setups, dilution, insiders, 13F, news - which have
+    no price-only history to backtest), followed forward. Excess return vs the
+    equal-weight universe; a (ticker, detector) firing counts again only after a
+    ``gap_days`` pause, so a condition that stays true isn't counted daily."""
+    sg = read_sql("SELECT ticker, asof, side, code, strength FROM signals")
+    if sg.empty:
+        return {"by_code": {}, "n": 0}
+    sg["asof"] = pd.to_datetime(sg["asof"])
+    sg = sg.sort_values(["ticker", "code", "asof"])
+    gap = sg.groupby(["ticker", "code"])["asof"].diff().dt.days
+    sg = sg[gap.isna() | (gap > gap_days)]
+    px = read_sql("SELECT ticker, date, close FROM prices WHERE date >= :d",
+                  {"d": str((sg["asof"].min() - pd.Timedelta(days=7)).date())})
+    if px.empty:
+        return {"by_code": {}, "n": 0}
+    px["date"] = pd.to_datetime(px["date"])
+    wide = px.pivot_table(index="date", columns="ticker", values="close").sort_index()
+    ew_idx = (1 + wide.pct_change().mean(axis=1).fillna(0.0)).cumprod()
+    rows = []
+    for r in sg.itertuples():
+        if r.ticker not in wide.columns:
+            continue
+        col = wide[r.ticker].dropna()
+        i = col.index.searchsorted(r.asof)
+        if i >= len(col):
+            continue
+        rec = {"code": r.code, "side": r.side, "ticker": r.ticker, "asof": r.asof}
+        base_px, base_d = col.iloc[i], col.index[i]
+        for h in horizons:
+            j = i + h
+            if j < len(col):
+                rec[f"x_{h}"] = (col.iloc[j] / base_px - 1) - (
+                    ew_idx.loc[col.index[j]] / ew_idx.loc[base_d] - 1)
+        rows.append(rec)
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return {"by_code": {}, "n": 0}
+    by_code = {}
+    for (code, side), g in df.groupby(["code", "side"]):
+        d = {"side": side, "n": int(len(g)), "first": str(g["asof"].min().date()),
+             "last": str(g["asof"].max().date())}
+        for h in horizons:
+            if f"x_{h}" in g:
+                st_ = _stats(g[f"x_{h}"], side)
+                d[f"n_{h}"], d[f"x_{h}"], d[f"hit_{h}"], d[f"t_{h}"] = (
+                    st_.get("n", 0), st_.get("mean"), st_.get("hit"), st_.get("t"))
+        by_code[code] = d
+    return {"by_code": by_code, "n": int(len(df)), "horizons": list(horizons),
+            "gap_days": gap_days}
+
+
 def run() -> dict:
     cfg = load_settings()
     b = cfg.get("backtest", default={}) or {}
@@ -314,16 +368,21 @@ def run() -> dict:
     ev = event_study(feats, horizons, det)
     fac = factor_study(feats, bench, horizons, det, every, warmup, q)
     tr = track_record()
+    try:
+        dr = detector_record()
+    except Exception as exc:  # noqa: BLE001 - a young database, never fatal
+        log.warning("detector record skipped: %s", exc)
+        dr = {"by_code": {}, "n": 0}
     rows = [{"id": f"{k}|{today}", "kind": k, "ts": now, "params": json.dumps(params),
              "results": json.dumps(_clean(v))}
-            for k, v in (("events", ev), ("factor", fac), ("track", tr))]
+            for k, v in (("events", ev), ("factor", fac), ("track", tr), ("detectors", dr))]
     bulk_upsert(backtests, rows)
     best = sorted(((c, s.get(f"t_{horizons[1]}") or 0) for c, s in ev.get("by_code", {}).items()),
                   key=lambda x: -abs(x[1]))[:3]
     log.info("backtest: %d events over %d names; strongest detectors %s",
              ev.get("n_events", 0), len(feats), best)
-    return {"rows": 3, "events": ev.get("n_events", 0), "names": len(feats),
-            "track_calls": tr.get("n", 0)}
+    return {"rows": 4, "events": ev.get("n_events", 0), "names": len(feats),
+            "track_calls": tr.get("n", 0), "live_detector_events": dr.get("n", 0)}
 
 
 def latest(kind: str) -> dict:

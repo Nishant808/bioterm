@@ -1,7 +1,7 @@
 # Runtime deps for the Streamlit Community Cloud dashboard.
 # (The dashboard adds ./src to sys.path, so the `bioterm` package itself is not
 #  installed here — only its third-party dependencies. Keep in sync with pyproject.toml.)
-# rebuild-marker: 2026-09-24 intelligence-v3
+# rebuild-marker: 2026-09-25 terminal-v4
 # NB: a comment-only edit here does NOT reliably make Streamlit Cloud re-run the
 # install — it keeps imported modules (bioterm.*, _shared, _ui) in sys.modules on a
 # fast reboot. When a page needs a *new* symbol from a long-lived module, change a
@@ -32,3 +32,8 @@ rich>=13.0
 python-dateutil>=2.9
 openpyxl>=3.1
 tenacity>=8.3
+# session 11 (terminal release) - new runtime deps; adding them is also the real
+# dependency change that makes Streamlit Cloud do the clean rebuild this release needs
+cryptography>=42            # the encrypted key vault (Settings -> API keys)
+anthropic>=1.8              # Copilot, AI event extraction, filing summaries, daily brief
+Authlib>=1.6                # optional owner sign-in via the app's OIDC provider

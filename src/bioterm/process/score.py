@@ -238,7 +238,8 @@ def run() -> dict:
     default_conv = float(cfg.get("score", "default_conviction_mult", default=1.0))
 
     tech = latest_technicals()
-    universe = read_sql("SELECT ticker, name, is_watchlist FROM securities")
+    universe = read_sql("SELECT ticker, name, is_watchlist FROM securities "
+                        "WHERE tier IS NULL OR tier = 'core'")
     if universe.empty:
         log.warning("no securities - run universe build first")
         return {"rows": 0}

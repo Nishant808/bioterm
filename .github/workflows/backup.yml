@@ -1,0 +1,41 @@
+# Weekly backup of the production database: every table (except the encrypted API
+# keys and the owner passcode hash) as JSON lines in one zip, kept as a workflow
+# artifact for 21 days. Restore with:  bioterm restore bioterm-backup.zip [--replace]
+#
+# Secrets: DATABASE_URL. ~2-4 min a week.
+
+name: backup
+
+on:
+  schedule:
+    - cron: "17 6 * * 0"       # Sundays 06:17 UTC - no ingest runs at the weekend
+  workflow_dispatch: {}
+
+concurrency:
+  group: bioterm-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      BIOTERM_SEC_USER_AGENT: ${{ secrets.SEC_UA }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --no-dev
+      - name: Back up
+        run: |
+          uv run bioterm backup --out "backup/bioterm-$(date -u +%Y%m%d).zip"
+          uv run bioterm retention --dry-run
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bioterm-backup
+          path: backup/*.zip
+          retention-days: 21
+          compression-level: 0       # already deflated

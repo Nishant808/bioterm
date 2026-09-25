@@ -63,6 +63,11 @@ FIELDS: dict[str, tuple[str, str, str]] = {
     "loe_years": ("Years to first LOE", "num", "marketed drugs, Orange Book"),
     "gov_awards": ("Government awards", "money", "USAspending, 5 years"),
     "watchlist": ("On watchlist", "bool", ""),
+    "coverage": ("Coverage", "text", "core = full coverage (XBI, seed, watchlist); extended "
+                                    "= the rest of US-listed biopharma by SIC code - prices, "
+                                    "fundamentals and filings only"),
+    "sic": ("SEC industry code", "text", "2834 pharma · 2835 diagnostics · 2836 biologicals "
+                                         "· 8731 research"),
 }
 OPS = {"num": [">=", "<=", "between"], "pct": [">=", "<=", "between"],
        "money": [">=", "<=", "between"], "bool": ["is"], "text": ["in"],
@@ -96,12 +101,14 @@ def _q(sql: str, params: dict | None = None) -> pd.DataFrame:
 def frame() -> pd.DataFrame:
     """Every screenable field per universe ticker (stored data only - fast)."""
     today = date.today()
-    df = _q("SELECT s.ticker, s.name, s.is_watchlist, f.market_cap, f.cash, f.total_debt, "
-            "f.runway_quarters, f.burn_ttm, f.short_percent_float, f.short_ratio, "
-            "f.shares_out, f.xbrl_shares_out, f.warrants_out, f.options_out FROM securities s "
-            "LEFT JOIN fundamentals f ON f.ticker = s.ticker")
+    df = _q("SELECT s.ticker, s.name, s.is_watchlist, s.tier, s.sic, f.market_cap, f.cash, "
+            "f.total_debt, f.runway_quarters, f.burn_ttm, f.short_percent_float, "
+            "f.short_ratio, f.shares_out, f.xbrl_shares_out, f.warrants_out, f.options_out "
+            "FROM securities s LEFT JOIN fundamentals f ON f.ticker = s.ticker "
+            "WHERE s.tier IS NULL OR s.tier IN ('core', 'extended')")
     if df.empty:
         return df
+    df["coverage"] = df.pop("tier").fillna("core")
     df = df.rename(columns={"short_percent_float": "short_pct_float",
                             "short_ratio": "days_to_cover", "is_watchlist": "watchlist"})
     df["watchlist"] = df["watchlist"].fillna(0).astype(int).astype(bool)

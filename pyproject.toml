@@ -31,7 +31,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-mock>=3.14", "ruff>=0.6"]
+dev = [
+    "fastapi>=0.115",
+    "httpx>=0.27",
+    "pytest>=8.0",
+    "pytest-mock>=3.14",
+    "ruff>=0.6",
+]
 # read-only JSON API + always-on worker container (deploy/)
 api = ["fastapi>=0.115", "uvicorn>=0.30"]
 

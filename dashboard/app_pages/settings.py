@@ -364,3 +364,21 @@ with tab_sys:
         pass
     st.page_link("app_pages/health.py", label="Data health and ingestion runs",
                  icon=":material/monitor_heart:")
+
+    label("Read-only API")
+    st.caption("`bioterm api` serves the database as JSON (universe, scores, signals, "
+               "catalysts, one stock, screens, alerts, data-quality) for spreadsheets and "
+               "notebooks. Every call needs this token as `Authorization: Bearer …`.")
+    secret_editor("BIOTERM_API_TOKEN", placeholder="paste a token, or generate one below")
+    if editable and vault.source("BIOTERM_API_TOKEN") != "env":
+        if st.button("Generate a new token", icon=":material/key:", type="tertiary",
+                     key="api_tok_gen"):
+            import secrets as _secrets
+
+            tok = _secrets.token_urlsafe(32)
+            vault.set("BIOTERM_API_TOKEN", tok)
+            st.session_state["api_tok_new"] = tok
+        if st.session_state.get("api_tok_new"):
+            st.code(st.session_state["api_tok_new"], language=None)
+            st.caption("Copy it now - it is stored encrypted and shown only as its last "
+                       "four characters from here on.")

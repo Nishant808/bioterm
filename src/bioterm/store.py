@@ -98,6 +98,15 @@ def add_to_watchlist(ticker: str, conviction: int = 3, thesis: str = "") -> None
         wl[ticker] = {"ticker": ticker, "conviction": conviction,
                       "thesis": thesis, "molecules": []}
     save_watchlist(list(wl.values()))
+    # an extended-tier name joins the core universe (full coverage) once watched
+    try:
+        from sqlalchemy import text
+
+        with get_engine().begin() as conn:
+            conn.execute(text("UPDATE securities SET tier = 'core', is_watchlist = 1 "
+                              "WHERE ticker = :t"), {"t": ticker})
+    except Exception as exc:  # noqa: BLE001
+        log.debug("watchlist promote %s: %s", ticker, exc)
 
 
 def remove_from_watchlist(ticker: str) -> None:
