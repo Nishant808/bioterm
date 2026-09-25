@@ -744,3 +744,14 @@ the next ingest-full backfills 5y prices / 4 quarters of 13F / 30 days of short 
 and FinBERT-scores up to 6,000 headlines (first run ~30 min est., inside the 55-min
 timeout), then signals and the backtest populate. Until that first full run the new
 pages show their empty states.
+
+### 2026-09-25 — session 9 deployed
+
+`main-vcyb9o` fast-forwarded into `main` (`a733c08`). Manual `ingest-full` run
+36101982735 on Neon: **success in 23 min**, every job `ok`. 209k price rows (5y
+backfill), 1,879 13F rows, 4,983 short-volume rows, 76 options chains, 119 molecule
+trials, FinBERT 6,000 headlines (per-run cap; the rest of the 17,842 over the next
+daily runs), 175 signal calls (12 STRONG BUY / 32 BUY / 31 SELL / 17 STRONG SELL),
+backtest over 172 names / 18,749 events. `calibrated: 0` on this first run (the event
+study didn't exist yet) - from tomorrow the signals use it. FinBERT model now cached
+on `main` (`hf-finbert-v1`).
