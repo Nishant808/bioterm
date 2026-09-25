@@ -783,7 +783,7 @@ on `main` (`hf-finbert-v1`).
 
 ## 2026-09-25 — session 11: the terminal release (everything on the upgrade list)
 
-Six commits on `main-vcyb9o` (`1537aa5` … `7f9a033`), merged to `main`. What shipped:
+Commits `1537aa5` … `6cae9bd` on `main-vcyb9o`, fast-forwarded into `main` (`6cae9bd`). Postgres probes 36132575101 (green) and 36135340228 / 36136299649 (cancelled at the owner's request before finishing); first production full run: ingest-full 36136573493 (dispatched on `main`, window=close). What shipped:
 
 **Foundation** — NYSE calendar with holidays / early closes (`market_calendar.py`; every
 workflow gates on it); versioned migrations (`@migration(n)` + `schema_migrations`);
