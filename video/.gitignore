@@ -1,4 +1,4 @@
 node_modules/
 output/
-public/audio/soundtrack.wav
+public/audio/*.wav
 !src/data/

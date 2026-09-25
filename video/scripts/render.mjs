@@ -2,6 +2,7 @@
 //   node scripts/render.mjs stills [comp] [t1,t2,...]   PNG frames for review -> output/stills
 //   node scripts/render.mjs master                      16:9 master  -> output/bioterm_30s_master.mp4
 //   node scripts/render.mjs vertical                    9:16 master  -> output/bioterm_30s_vertical_master.mp4
+//   node scripts/render.mjs reel                        40 s motion reel (1080p60) -> output/bioterm_reel_40s_master.mp4
 import path from 'node:path';
 import fs from 'node:fs';
 import {bundle} from '@remotion/bundler';
@@ -30,8 +31,8 @@ if (mode === 'stills') {
     console.log('still', output);
   }
 } else {
-  const id = mode === 'vertical' ? 'BioTerm9x16' : 'BioTerm16x9';
-  const file = mode === 'vertical' ? 'bioterm_30s_vertical_master.mp4' : 'bioterm_30s_master.mp4';
+  const id = mode === 'reel' ? 'Showreel' : mode === 'vertical' ? 'BioTerm9x16' : 'BioTerm16x9';
+  const file = mode === 'reel' ? 'bioterm_reel_40s_master.mp4' : mode === 'vertical' ? 'bioterm_30s_vertical_master.mp4' : 'bioterm_30s_master.mp4';
   const comp = await pick(id, {withAudio: true});
   let last = -1;
   await renderMedia({

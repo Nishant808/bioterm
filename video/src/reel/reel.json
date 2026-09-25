@@ -1,0 +1,31 @@
+{
+  "bpm": 120,
+  "duration": 40,
+  "scenes": {
+    "ignite": 0,
+    "mark": 3,
+    "kinetic": 7,
+    "universe": 11,
+    "engine": 16,
+    "terminal": 21,
+    "copilot": 26,
+    "numbers": 31,
+    "finale": 35,
+    "end": 40
+  },
+  "hits": [3, 7, 11, 16, 19, 21, 26, 31, 35.5],
+  "words": [
+    {"at": 7.0, "word": "HALTS", "sub": "T1 · NEWS PENDING · 09:41:07 ET"},
+    {"at": 8.0, "word": "FILINGS", "sub": "8-K · 424B5 · SC 13D · WITHIN MINUTES"},
+    {"at": 9.0, "word": "WIRES", "sub": "GLOBENEWSWIRE · PR NEWSWIRE · EDGAR"},
+    {"at": 10.0, "word": "MOVERS", "sub": "+ WHY IT MOVED"}
+  ],
+  "stats": [
+    {"at": 31.0, "n": 57, "label": "TABLES"},
+    {"at": 31.5, "n": 39, "label": "DETECTORS"},
+    {"at": 32.0, "n": 276, "label": "TESTS"},
+    {"at": 32.5, "n": 14, "label": "AI TOOLS"},
+    {"at": 33.0, "n": 660, "label": "NAMES"},
+    {"at": 33.5, "n": 5, "label": "ALERT CHANNELS"}
+  ]
+}
