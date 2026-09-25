@@ -7,6 +7,7 @@ import streamlit as st
 
 from _shared import scores_df, universe_df
 from _ui import card, kpi_row, page_header
+import _auth
 from bioterm import store
 
 page_header("Watchlist",
@@ -31,11 +32,14 @@ with kpi_row(3, "wl"):
               int((pd.to_numeric(current["conviction"], errors="coerce") >= 4).sum()),
               border=True)
 
+CAN = _auth.can_edit()
 with card("Your names", icon_name="bookmark_star",
-          meta="Edit cells directly · add a row at the bottom for a new name"):
+          meta="Edit cells directly · add a row at the bottom for a new name" if CAN
+          else "Read-only"):
     edited = st.data_editor(
         current[["ticker", "conviction", "thesis", "molecules", "focus_rank"]],
-        num_rows="dynamic", hide_index=True, key="wl_editor",
+        num_rows="dynamic" if CAN else "fixed", hide_index=True, key="wl_editor",
+        disabled=not CAN,
         column_config={
             "ticker": st.column_config.TextColumn("Ticker", required=True, width=90),
             "conviction": st.column_config.NumberColumn(
@@ -50,11 +54,14 @@ with card("Your names", icon_name="bookmark_star",
     )
 
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        save = st.button("Save watchlist", type="primary", icon=":material/save:")
+        save = st.button("Save watchlist", type="primary", icon=":material/save:",
+                         disabled=not CAN)
         st.caption("Names not yet in the universe are added on the next full refresh. "
                    "`config/watchlist.yml` is only the initial seed.")
 
-if save:
+if not CAN:
+    _auth.guard("edit the watchlist", key="wl")
+if save and CAN:
     entries, unknown, known = [], [], set(universe_df()["ticker"])
     for _, r in edited.iterrows():
         tk = str(r["ticker"]).strip().upper()

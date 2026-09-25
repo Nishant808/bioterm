@@ -15,10 +15,17 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 # On Streamlit Community Cloud the DB URL comes in via st.secrets, not the env.
-# Bridge it into the environment *before* bioterm.config reads it.
+# Bridge it into the environment *before* bioterm.config reads it. API keys and
+# webhooks are normally stored from the Settings page (encrypted in the DB); a
+# value in secrets takes precedence over the stored one.
+_BRIDGE = ("DATABASE_URL", "BIOTERM_SEC_USER_AGENT", "GH_DISPATCH_TOKEN", "GH_REPO",
+           "BIOTERM_ADMIN_PASSWORD", "BIOTERM_SECRET_KEY", "BIOTERM_OWNER_EMAILS",
+           "BIOTERM_LIVE_PRICES", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL",
+           "FINNHUB_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "SLACK_WEBHOOK_URL",
+           "DISCORD_WEBHOOK_URL", "NTFY_TOPIC", "NTFY_SERVER", "NTFY_TOKEN", "SMTP_HOST",
+           "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM", "SMTP_TO")
 try:
-    for _k in ("DATABASE_URL", "BIOTERM_SEC_USER_AGENT", "GH_DISPATCH_TOKEN",
-               "GH_REPO", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
+    for _k in _BRIDGE:
         if _k in st.secrets and _k not in os.environ:
             os.environ[_k] = str(st.secrets[_k])
 except Exception:  # noqa: BLE001 - no secrets file locally is fine

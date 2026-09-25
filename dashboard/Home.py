@@ -50,6 +50,7 @@ def _fresh(name: str):
 
 
 _fresh("_shared")  # secrets bridge + src/ on sys.path - must precede bioterm imports
+_fresh("_auth")
 _ui = _fresh("_ui")
 _fresh("_live")
 
@@ -67,6 +68,7 @@ nav = st.navigation(
             _page("overview.py", "Overview", "space_dashboard", default=True),
             _page("signals.py", "Signals", "swap_vert", "Signals"),
             _page("stock.py", "Stock detail", "query_stats", "Stock_Detail"),
+            _page("copilot.py", "Copilot", "smart_toy", "Copilot"),
         ],
         "Intelligence": [
             _page("focus.py", "Focus list", "leaderboard", "Stocks_in_Focus"),
@@ -83,6 +85,8 @@ nav = st.navigation(
             _page("watchlist.py", "Watchlist", "bookmark_star", "Watchlist"),
             _page("alerts.py", "Alerts", "notifications_active", "Alerts"),
             _page("portfolio.py", "Paper trading", "account_balance_wallet", "Portfolio"),
+            _page("health.py", "Data health", "monitor_heart", "Health"),
+            _page("settings.py", "Settings", "settings", "Settings"),
         ],
     },
     position="top",

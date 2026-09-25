@@ -10,6 +10,7 @@ from _shared import molecule_links_df, molecule_trials_df, molecules_df, univers
 from _ui import (MUTED, PHASE_COLORS, card, chart, display_name, empty_state, esc,
                  headline_rows, kpi_row, kv_list, page_header, phase_group, plotly_layout,
                  safe_url, tone_of)
+import _auth
 from bioterm import store
 
 page_header("Molecules",
@@ -24,6 +25,8 @@ names = dict(zip(uni["ticker"], uni["name"])) if not uni.empty else {}
 def _editor(m: dict | None, key: str) -> None:
     """Add (m=None) or edit one molecule. Aliases and NCT IDs are what link the
     molecule to trials, headlines and catalysts - the more names, the more hits."""
+    if not _auth.guard("track or edit molecules", key=key):
+        return
     with st.form(key, clear_on_submit=m is None, border=False):
         with st.container(horizontal=True, gap="small"):
             tk_opts = tickers or ([m["ticker"]] if m else [])
@@ -67,7 +70,7 @@ if mols.empty:
                 "science")
     with st.container(horizontal=True, horizontal_alignment="center"):
         if st.button("Import molecules from the watchlist", icon=":material/download:",
-                     type="primary"):
+                     type="primary", disabled=not _auth.can_edit()):
             n = store.sync_molecules_from_watchlist()
             st.cache_data.clear()
             st.toast(f"Imported {n} molecule{'s' if n != 1 else ''}",
@@ -190,7 +193,7 @@ with card("Dossier", icon_name="folder_open"):
         with st.expander("Edit molecule", icon=":material/edit:"):
             _editor(m, f"mol_edit_{mid}")
             if st.button("Stop tracking", icon=":material/delete:", type="tertiary",
-                         key=f"mol_del_{mid}"):
+                         key=f"mol_del_{mid}", disabled=not _auth.can_edit()):
                 store.delete_molecule(mid)
                 st.cache_data.clear()
                 st.session_state.pop("mol_pick", None)
@@ -263,7 +266,7 @@ with card("Dossier", icon_name="folder_open"):
 with st.expander("Track another molecule", icon=":material/add_circle:"):
     _editor(None, "mol_add")
     if st.button("Import any new molecules from the watchlist", icon=":material/download:",
-                 type="tertiary"):
+                 type="tertiary", disabled=not _auth.can_edit()):
         n = store.sync_molecules_from_watchlist()
         st.cache_data.clear()
         st.toast(f"Imported {n} molecule{'s' if n != 1 else ''}", icon=":material/check_circle:")

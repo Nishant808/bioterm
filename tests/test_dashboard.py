@@ -18,7 +18,8 @@ from streamlit.testing.v1 import AppTest
 DASH = Path(__file__).resolve().parents[1] / "dashboard"
 APP = str(DASH / "Home.py")
 PAGES = ["overview", "signals", "focus", "stock", "smart_money", "molecules", "backtest",
-         "catalysts", "news", "watchlist", "compare", "alerts", "portfolio"]
+         "catalysts", "news", "watchlist", "compare", "alerts", "portfolio", "copilot",
+         "settings", "health"]
 
 if str(DASH) not in sys.path:
     sys.path.insert(0, str(DASH))
@@ -287,3 +288,46 @@ def test_molecule_editor_tracks_a_new_molecule():
     assert len(mols) == n0 + 1
     assert mols["bbbbnib"]["aliases"] == ["BB-202", "Bbrand"]
     assert mols["bbbbnib"]["nct_ids"] == ["NCT01234567"]
+
+
+def test_settings_adds_and_deletes_an_llm_key():
+    from bioterm import vault
+
+    at = _render("settings")
+    assert not at.exception
+    at.text_input(key="in_ANTHROPIC_API_KEY").input("sk-ant-api03-test-key-9876")
+    next(b for b in at.button if b.label == "Save without testing").click().run()
+    assert not at.exception
+    assert vault.get("ANTHROPIC_API_KEY") == "sk-ant-api03-test-key-9876"
+    listing = {r["name"]: r for r in vault.listing()}
+    assert listing["ANTHROPIC_API_KEY"]["hint"] == "…9876"
+    at = _render("settings")
+    next(b for b in at.button if b.label == "Delete permanently").click().run()
+    assert not at.exception
+    vault.reset_key_cache()
+    assert vault.get("ANTHROPIC_API_KEY") is None
+
+
+def test_owner_passcode_makes_the_terminal_read_only():
+    from bioterm import auth, store
+
+    _seed()
+    auth.claim("owner passcode 1")
+    store.set_note("AAAA", "secret thesis")
+    at = _render("watchlist")
+    assert not at.exception
+    assert next(b for b in at.button if b.label == "Save watchlist").disabled
+    at = _render("stock", ticker="AAAA")
+    assert not at.exception
+    assert not any("secret thesis" in (t.value or "") for t in at.text_area)
+    at = _render("settings")
+    at.text_input(key="unlock_header_code").input("owner passcode 1")   # header chip
+    next(b for b in at.button if b.label == "Unlock").click().run()
+    assert not at.exception and at.session_state["bt_owner"]
+
+
+def test_copilot_page_explains_how_to_switch_it_on():
+    at = _render("copilot")
+    assert not at.exception
+    assert any("Copilot is off" in (h.value or "") for h in at.get("html")) or \
+        any("Settings" in str(p.label) for p in at.get("page_link"))

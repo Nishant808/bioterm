@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
+import _auth
 import _live as live
 from _shared import (catalysts_df, filings_df, fundamentals_row, insider_txns_df,
                      molecules_df, money, news_df, options_history, pct, q,
@@ -88,7 +89,8 @@ def _live_price(tk: str) -> None:
     chg, pc = qd.get("change"), qd.get("change_pct")
     st.metric("Last price", f"${qd['price']:,.2f}",
               delta=None if pc is None or pd.isna(pc) else f"{chg:+.2f} ({pc * 100:+.2f}%)",
-              border=True, help=live.source_note(qd.get("source", "live"), qd.get("asof")))
+              border=True, help=live.source_note(qd.get("source", "live"), qd.get("asof"),
+                                                  qd.get("provider")))
 
 
 with kpi_row(7, "hero"):
@@ -109,6 +111,7 @@ with kpi_row(7, "hero"):
               delta_arrow="off", border=True)
 
 # ------------------------------------------------------------------ your view
+CAN = _auth.can_edit()
 view_col, notes_col = st.columns(2, gap="medium")
 with view_col:
     with card("Your view", icon_name="psychology",
@@ -121,19 +124,19 @@ with view_col:
             st.space("stretch")
             if st.button("Update conviction" if on_wl else "Add to watchlist",
                          icon=":material/check:" if on_wl else ":material/bookmark_add:",
-                         type="primary"):
+                         type="primary", disabled=not CAN):
                 store.add_to_watchlist(ticker, conv, wl.get("thesis", "") if on_wl else "")
                 st.cache_data.clear()
                 st.rerun()
             if on_wl and st.button("Remove", icon=":material/bookmark_remove:",
-                                   type="tertiary"):
+                                   type="tertiary", disabled=not CAN):
                 store.remove_from_watchlist(ticker)
                 st.cache_data.clear()
                 st.rerun()
         if on_wl:
             thesis = st.text_input("Thesis", value=wl.get("thesis", ""), key=f"th_{ticker}",
-                                   placeholder="Why you're watching this")
-            if thesis != wl.get("thesis", ""):
+                                   placeholder="Why you're watching this", disabled=not CAN)
+            if CAN and thesis != wl.get("thesis", ""):
                 store.add_to_watchlist(ticker, conv, thesis)
                 st.cache_data.clear()
             if wl.get("molecules"):
@@ -143,14 +146,15 @@ with view_col:
                        "conviction weight its score.")
 
 with notes_col:
-    with card("Research notes", icon_name="edit_note", meta="Private to you"):
-        note = st.text_area("Notes", value=store.get_note(ticker), height=96,
-                            label_visibility="collapsed", key=f"note_{ticker}",
-                            placeholder="Mechanism, trial design, competitive read…")
-        if st.button("Save note", key=f"sn_{ticker}", icon=":material/save:"):
-            store.set_note(ticker, note)
-            st.cache_data.clear()
-            st.toast("Note saved", icon=":material/check_circle:")
+    with card("Research notes", icon_name="edit_note", meta="Visible to the owner only"):
+        if _auth.guard("read and write research notes", key="notes"):
+            note = st.text_area("Notes", value=store.get_note(ticker), height=96,
+                                label_visibility="collapsed", key=f"note_{ticker}",
+                                placeholder="Mechanism, trial design, competitive read…")
+            if st.button("Save note", key=f"sn_{ticker}", icon=":material/save:"):
+                store.set_note(ticker, note)
+                st.cache_data.clear()
+                st.toast("Note saved", icon=":material/check_circle:")
 
 # ------------------------------------------------------------------ tabs
 tab_sig, tab_px, tab_pipe, tab_cat, tab_news, tab_ins, tab_flow, tab_fil = st.tabs([
@@ -423,8 +427,8 @@ with tab_cat:
                                               default="medium", required=True)
             c_title = st.text_input("What happens", placeholder="e.g. FDA decision on ___ sNDA")
             c_url = st.text_input("Source link (optional)")
-            if st.form_submit_button("Add catalyst", type="primary",
-                                     icon=":material/add:") and c_title:
+            if st.form_submit_button("Add catalyst", type="primary", disabled=not CAN,
+                                     icon=":material/add:") and c_title and CAN:
                 store.add_manual_catalyst(ticker, c_type, c_date, c_title, c_conf, c_url)
                 st.cache_data.clear()
                 st.rerun()
@@ -440,7 +444,7 @@ with tab_cat:
                             f":gray[({c['confidence']})]")
                 st.space("stretch")
                 if st.button("Delete", key=f"dc_{c['id']}", icon=":material/delete:",
-                             type="tertiary"):
+                             type="tertiary", disabled=not CAN):
                     store.delete_manual_catalyst(c["id"])
                     st.cache_data.clear()
                     st.rerun()

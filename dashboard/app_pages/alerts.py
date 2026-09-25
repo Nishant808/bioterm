@@ -6,6 +6,7 @@ import streamlit as st
 
 from _shared import alerts_fired_df, q
 from _ui import alert_detail, alert_rows, card, empty_state, kpi_row, page_header
+import _auth
 from bioterm import alerts as alert_engine
 from bioterm import store
 
@@ -54,7 +55,8 @@ with st.expander("Alert rules", icon=":material/tune:", expanded=False):
         rules["watchlist_only"] = st.toggle("Watchlist names only",
                                             value=bool(rules["watchlist_only"]))
         st.space("stretch")
-        if st.button("Save rules", type="primary", icon=":material/save:"):
+        if st.button("Save rules", type="primary", icon=":material/save:",
+                     disabled=not _auth.can_edit()):
             store.set_meta("alert_rules", rules)
             st.cache_data.clear()
             st.toast("Rules saved — the ingest-fast workflow reads them on each run",

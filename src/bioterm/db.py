@@ -806,10 +806,13 @@ risk_diffs = Table(
 llm_usage = Table(
     "llm_usage", metadata,
     Column("day", Date, primary_key=True),
-    Column("provider", String(24), primary_key=True),
+    Column("model", String(64), primary_key=True),
+    Column("provider", String(24)),
     Column("calls", Integer),
     Column("input_tokens", Integer),
     Column("output_tokens", Integer),
+    Column("cache_read_tokens", Integer),
+    Column("cost_usd", Float),
 )
 
 

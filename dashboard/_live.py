@@ -1,19 +1,21 @@
-"""Live market data for the dashboard, straight from Yahoo Finance.
+"""Live market data for the dashboard.
 
 Every price the dashboard *shows* comes from here - the ingested ``prices``
-table only feeds the engines (technicals, Focus Score, signals, backtest). Quotes
-and histories are cached for 60 seconds, so a page reload during market hours
-shows the move as it happens without hammering Yahoo.
+table only feeds the engines (technicals, Focus Score, signals, backtest).
+Quotes go through ``bioterm.quotes``' failover chain (Yahoo -> Nasdaq ->
+Finnhub when a key is stored -> last stored close) and are cached for 60
+seconds; daily and intraday histories come from Yahoo with the stored daily
+closes as the fallback.
 
-If Yahoo is unreachable the helpers fall back to the last stored daily close and
-say so (``source == "stored"``) - a page with a labelled end-of-day price beats a
-page with no chart. ``BIOTERM_LIVE_PRICES=0`` forces that path (tests, offline).
+If no provider answers, the helpers say so (``source == "stored"``) - a page
+with a labelled end-of-day price beats a page with no chart.
+``BIOTERM_LIVE_PRICES=0`` forces that path (tests, offline).
 """
 from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, time as dtime
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -35,19 +37,11 @@ def enabled() -> bool:
 
 # ---------------------------------------------------------------- market clock
 def market_state(now: datetime | None = None) -> tuple[str, str]:
-    """(state, label) for the US equity session: open / pre / after / closed.
-    Exchange holidays aren't modelled - Yahoo's own timestamps tell the truth."""
-    t = (now or datetime.now(NY)).astimezone(NY)
-    if t.weekday() >= 5:
-        return "closed", "Market closed"
-    hm = t.time()
-    if dtime(9, 30) <= hm < dtime(16, 0):
-        return "open", "Market open"
-    if dtime(4, 0) <= hm < dtime(9, 30):
-        return "pre", "Pre-market"
-    if dtime(16, 0) <= hm < dtime(20, 0):
-        return "after", "After hours"
-    return "closed", "Market closed"
+    """(state, label) for the US equity session: open / pre / after / closed,
+    NYSE holidays and early closes included."""
+    from bioterm.market_calendar import session
+
+    return session(now)
 
 
 # ---------------------------------------------------------------- parsing (pure)
@@ -75,36 +69,10 @@ def _norm_history(raw: pd.DataFrame) -> pd.DataFrame:
 
 def quotes_from_download(raw: pd.DataFrame, tickers: list[str]) -> dict[str, dict]:
     """Batch ``yf.download(period="5d", interval="1d", group_by="ticker")`` ->
-    {ticker: {price, prev_close, change, change_pct, asof}}. Today's daily bar is
-    live during the session, so its close is the last trade."""
-    out: dict[str, dict] = {}
-    if raw is None or raw.empty:
-        return out
-    multi = isinstance(raw.columns, pd.MultiIndex)
-    for t in tickers:
-        if multi:
-            if t not in raw.columns.get_level_values(0):
-                continue
-            sub = raw[t]
-        elif len(tickers) == 1:
-            sub = raw
-        else:
-            continue
-        sub = sub.rename(columns=str.lower)
-        if "close" not in sub:
-            continue
-        c = pd.to_numeric(sub["close"], errors="coerce").dropna()
-        if c.empty:
-            continue
-        price = float(c.iloc[-1])
-        prev = float(c.iloc[-2]) if len(c) > 1 else np.nan
-        ts = pd.Timestamp(c.index[-1])
-        out[t] = {"price": price, "prev_close": prev,
-                  "change": price - prev if prev == prev else np.nan,
-                  "change_pct": price / prev - 1 if prev == prev and prev else np.nan,
-                  "asof": ts.tz_convert(NY).tz_localize(None) if ts.tzinfo else ts,
-                  "source": "live"}
-    return out
+    {ticker: {price, prev_close, change, change_pct, asof, source, provider}}."""
+    from bioterm.quotes import parse_yahoo_download
+
+    return parse_yahoo_download(raw, tickers)
 
 
 # ---------------------------------------------------------------- Yahoo (cached)
@@ -118,12 +86,11 @@ def _yf_history(ticker: str, period: str, interval: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=TTL, show_spinner=False)
-def _yf_quotes(tickers: tuple[str, ...]) -> dict[str, dict]:
-    import yfinance as yf
+def _live_quotes(tickers: tuple[str, ...]) -> dict[str, dict]:
+    """Yahoo -> Nasdaq -> Finnhub (bioterm.quotes), live answers only."""
+    from bioterm import quotes as qmod
 
-    raw = yf.download(list(tickers), period="5d", interval="1d", group_by="ticker",
-                      auto_adjust=False, progress=False, threads=True)
-    return quotes_from_download(raw, list(tickers))
+    return qmod.quotes(list(tickers), allow_stored=False)
 
 
 @st.cache_data(ttl=TTL, show_spinner=False)
@@ -206,7 +173,7 @@ def quotes(tickers) -> dict[str, dict]:
     got: dict[str, dict] = {}
     if enabled():
         try:
-            got = _yf_quotes(tks)
+            got = dict(_live_quotes(tks))
         except Exception as exc:  # noqa: BLE001
             log.warning("live quotes failed: %s", exc)
     missing = tuple(t for t in tks if t not in got)
@@ -267,11 +234,14 @@ def indicators(df: pd.DataFrame) -> pd.DataFrame:
     return d
 
 
-def source_note(source: str, asof=None) -> str:
+PROVIDERS = {"yahoo": "Yahoo Finance", "nasdaq": "Nasdaq", "finnhub": "Finnhub"}
+
+
+def source_note(source: str, asof=None, provider: str | None = None) -> str:
     """One caption line saying where a price came from."""
     if source == "live":
         _, label = market_state()
         when = f" · {pd.Timestamp(asof):%b %d, %H:%M} ET" if asof is not None and \
             pd.notna(asof) and pd.Timestamp(asof).hour else ""
-        return f"Live · Yahoo Finance · {label}{when}"
+        return f"Live · {PROVIDERS.get(provider, 'Yahoo Finance')} · {label}{when}"
     return "Live feed unavailable — showing the last stored daily close"

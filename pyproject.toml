@@ -26,10 +26,14 @@ dependencies = [
     "tenacity>=8.3",
     "watchdog>=6.0",
     "cryptography>=42",
+    "anthropic>=1.8",
+    "Authlib>=1.6",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-mock>=3.14", "ruff>=0.6"]
+# read-only JSON API + always-on worker container (deploy/)
+api = ["fastapi>=0.115", "uvicorn>=0.30"]
 
 [project.scripts]
 bioterm = "bioterm.cli:app"

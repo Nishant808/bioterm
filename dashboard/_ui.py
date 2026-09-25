@@ -232,7 +232,11 @@ def page_header(title: str, subtitle: str | None = None) -> None:
                           gap="small", width="content"):
             st.html(f"<div class='bt-status {state}' title='{esc(tip)}'>"
                     f"<span class='bt-pulse'></span>{esc(label)}</div>")
-            if os.environ.get("GH_DISPATCH_TOKEN") and os.environ.get("GH_REPO"):
+            import _auth
+
+            _auth.header_chip()
+            if os.environ.get("GH_DISPATCH_TOKEN") and os.environ.get("GH_REPO") \
+                    and _auth.can_edit():
                 if st.button("Refresh", icon=":material/refresh:", type="tertiary",
                              help="Queue a data refresh (ingest-fast workflow)",
                              key="bt-refresh"):
@@ -419,6 +423,14 @@ def alert_detail(detail) -> str:
     if sep and head in CATALYST_TYPES:
         d = catalyst_label(head) + sep + rest
     return d
+
+
+def status_rows(items: list[tuple[str, str, str]]) -> None:
+    """Rows of (dot colour, title, meta) - health checks, freshness, channels."""
+    _list([f"<div class='bt-row'><div class='bt-row-l'><span class='bt-dot' "
+           f"style='background:{esc(c)}'></span></div><div class='bt-row-m'>"
+           f"<div class='bt-row-h'><b>{esc(t)}</b></div>"
+           f"<div class='bt-row-s wrap'>{esc(m)}</div></div></div>" for c, t, m in items])
 
 
 def alert_rows(items: list[dict]) -> None:
@@ -776,6 +788,8 @@ _CSS = f"""
   align-items: center; gap: .4rem; flex-wrap: wrap; }}
 .bt-row-s.wrap {{ display: block; color: var(--bt-text2); font-size: .84rem; line-height: 1.4; }}
 .bt-row-kind {{ color: var(--bt-muted); font-size: .8rem; }}
+.bt-dot {{ width: .55rem; height: .55rem; border-radius: 50%; display: inline-block;
+          margin-top: .45rem; }}
 .bt-tk {{ font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 600;
   font-size: .8rem; color: var(--bt-text); letter-spacing: .01em; }}
 .bt-tk em {{ font-style: normal; color: var(--bt-faint); font-weight: 500; margin-left: 2px; }}

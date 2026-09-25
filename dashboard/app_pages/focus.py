@@ -9,6 +9,7 @@ from _shared import prev_scores_df, scores_df, sentiment_df, signal_board
 from _ui import (ACCENT, CATALYST_TYPES, FAMILIES, NEG, TEXT_2, card, catalyst_family,
                  catalyst_label, catalyst_title, chart, display_name, empty_state, kpi_row,
                  kv_list, page_header, plotly_layout, tone_of)
+import _auth
 from bioterm import store
 
 
@@ -122,7 +123,8 @@ with card("Score breakdown", icon_name="donut_large"):
         _on_wl = pick in {x["ticker"].upper() for x in store.get_watchlist()}
         if st.button("On watchlist" if _on_wl else "Add to watchlist",
                      icon=":material/bookmark_added:" if _on_wl else ":material/bookmark_add:",
-                     disabled=_on_wl):
+                     disabled=_on_wl or not _auth.can_edit(),
+                     help=None if _auth.can_edit() else "Unlock to edit the watchlist"):
             store.add_to_watchlist(pick, 3)
             st.cache_data.clear()
             st.rerun()

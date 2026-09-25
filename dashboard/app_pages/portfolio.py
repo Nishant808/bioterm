@@ -10,6 +10,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+import _auth
 import _live as live
 from _shared import scores_df, universe_df
 from _ui import (ACCENT, BORDER_STRONG, card, chart, empty_state, kpi_row, md_safe,
@@ -53,6 +54,7 @@ _want = (st.session_state.pop("_pf_new", None)
          or st.query_params.get("pf")
          or _get_last_book())
 
+CAN = _auth.can_edit()
 with st.container(horizontal=True, vertical_alignment="center", gap="small"):
     sel = st.selectbox("Book", ids, format_func=lambda i: names[i],
                        index=ids.index(_want) if _want in ids else 0,
@@ -62,16 +64,17 @@ with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         nn = st.text_input("Name", f"Strategy {chr(65 + len(plist))}", key="pf_new_name")
         nc = st.number_input("Starting cash ($)", 1000.0, 100_000_000.0, 100_000.0,
                              step=10_000.0, key="pf_new_cash")
-        if st.button("Create", type="primary", key="pf_new_go", icon=":material/check:"):
+        if st.button("Create", type="primary", key="pf_new_go", icon=":material/check:",
+                     disabled=not CAN):
             st.session_state["_pf_new"] = pf.create_portfolio(nn, nc)
             st.rerun()
-    reset = st.button("Reset", icon=":material/restart_alt:", type="tertiary",
+    reset = st.button("Reset", icon=":material/restart_alt:", type="tertiary", disabled=not CAN,
                       help="Wipe all trades in this book, keep its starting cash")
     delete = st.button("Delete", icon=":material/delete:", type="tertiary",
-                       disabled=len(plist) <= 1,
+                       disabled=len(plist) <= 1 or not CAN,
                        help="Delete this book (you always keep at least one)")
 st.query_params["pf"] = sel
-if st.session_state.get("_pf_last_written") != sel:
+if st.session_state.get("_pf_last_written") != sel and CAN:
     _set_last_book(sel)
     st.session_state["_pf_last_written"] = sel
 if reset:
@@ -196,7 +199,8 @@ with book_col:
                 })
             last_id = int(tb.sort_values("ts").iloc[-1]["id"])
             with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-                if st.button("Undo last trade", icon=":material/undo:", type="tertiary"):
+                if st.button("Undo last trade", icon=":material/undo:", type="tertiary",
+                             disabled=not CAN):
                     pf.delete_trade(last_id)
                     st.cache_data.clear()
                     st.rerun()
@@ -234,7 +238,8 @@ with ticket_col:
         price = c2.number_input("Price ($)", min_value=0.0, step=0.01, key=_pk,
                                 help=f"Live price for {tk}: "
                                      + (f"${lc:,.2f}" if lc else "n/a — enter one")
-                                     + (f" ({live.source_note(_q['source'])})" if _q else ""))
+                                     + (f" ({live.source_note(_q['source'], None, _q.get('provider'))})"
+                                        if _q else ""))
         if lc and abs(price - round(float(lc), 2)) >= 0.01:
             if st.button(f"Use live price ${lc:,.2f}", key="pf_usemkt",
                          icon=":material/restart_alt:", type="tertiary"):
@@ -258,8 +263,10 @@ with ticket_col:
             st.caption(":material/warning: No price on file for this ticker — enter one "
                        "manually.")
 
+        if not CAN:
+            _auth.guard("place simulated trades", key="pf")
         if st.button(f"{side.capitalize()} {qty:g} {tk}", type="primary", width="stretch",
-                     key="pf_go", icon=":material/check:"):
+                     key="pf_go", icon=":material/check:", disabled=not CAN):
             err = pf.validate_trade(trades, cash_start, tk, side, qty, price, fees)
             if err:
                 st.error(err, icon=":material/error:")

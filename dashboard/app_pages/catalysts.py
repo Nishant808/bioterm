@@ -9,6 +9,7 @@ from _shared import catalysts_df, scores_df, universe_df
 from _ui import (CATALYST_TYPES, FAMILIES, MUTED, card, catalyst_family, catalyst_label,
                  catalyst_title, chart, empty_state, kpi_row, label, md_safe, page_header,
                  plotly_layout)
+import _auth
 from bioterm import store
 
 CATALYST_KEYS = list(CATALYST_TYPES)
@@ -35,6 +36,7 @@ with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
     with st.popover("Pin a catalyst", icon=":material/push_pin:"):
         st.caption("Dates you know from your own research — PDUFA, AdCom, expected "
                    "readouts. They feed the Focus Score on the next refresh.")
+        _can = _auth.guard("pin catalysts", key="cal")
         with st.form("add_cat_cal", clear_on_submit=True, border=False):
             _tk = st.selectbox("Ticker", universe_df()["ticker"].tolist())
             _ty = st.selectbox("Type", CATALYST_KEYS, format_func=catalyst_label)
@@ -43,8 +45,8 @@ with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
                                        default="medium", required=True)
             _ti = st.text_input("What happens")
             _ur = st.text_input("Source link (optional)")
-            if st.form_submit_button("Add catalyst", type="primary",
-                                     icon=":material/add:") and _ti:
+            if st.form_submit_button("Add catalyst", type="primary", disabled=not _can,
+                                     icon=":material/add:") and _ti and _auth.can_edit():
                 store.add_manual_catalyst(_tk, _ty, _dt, _ti, _cf, _ur)
                 st.cache_data.clear()
                 st.toast(f"Pinned for {_tk}", icon=":material/check_circle:")
@@ -58,7 +60,7 @@ with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
                                 f"{catalyst_label(mc['type'])} · {md_safe(mc['title'])}")
                     st.space("stretch")
                     if st.button("Delete", key=f"delc_{mc['id']}", icon=":material/delete:",
-                                 type="tertiary"):
+                                 type="tertiary", disabled=not _can):
                         store.delete_manual_catalyst(mc["id"])
                         st.cache_data.clear()
                         st.rerun()
