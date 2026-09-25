@@ -48,6 +48,9 @@ default_ix = options.index(qs) if qs in options else (
 ticker = st.selectbox("Ticker", options, index=default_ix, label_visibility="collapsed",
                       format_func=lambda t: f"{t} · {display_name(names.get(t, ''))}",
                       width=420)
+if qs and qs != ticker and qs not in options:
+    _asked = "".join(ch for ch in str(qs) if ch.isalnum() or ch in ".-")[:16]
+    st.caption(f"{_asked} isn't in BioTerm's universe (core or extended) - showing {ticker}.")
 st.query_params["ticker"] = ticker
 
 meta = uni[uni["ticker"] == ticker].iloc[0]

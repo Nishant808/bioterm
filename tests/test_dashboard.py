@@ -396,3 +396,12 @@ def test_overview_setup_strip_only_for_owner_or_unclaimed():
     assert not at.exception
     assert not any("Claim this terminal" in str(p.label) or "LLM key" in str(p.label)
                    for p in at.get("page_link"))          # a visitor sees no checklist
+
+
+def test_stock_deep_link_to_an_unknown_ticker_says_so():
+    _seed()
+    at = _render("stock", ticker="[x](javascript:alert(1))")
+    assert not at.exception
+    cap = " ".join(c.value for c in at.caption)
+    assert "isn't in BioTerm's universe" in cap and "javascript" in cap and "(" not in \
+        cap.split("isn't")[0]
