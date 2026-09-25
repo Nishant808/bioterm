@@ -10,6 +10,9 @@
     bioterm status                  show recent ingest runs + row counts
     bioterm serve                   launch the Streamlit dashboard
     bioterm scheduler               run the always-on background scheduler
+    bioterm pulse                   one real-time pass (halts, filings, wires, movers, alerts)
+    bioterm worker                  the pulse in a loop (always-on host)
+    bioterm ai [--brief]            AI jobs: headline events, 8-K summaries, risk diffs, brief
 """
 from __future__ import annotations
 
@@ -54,10 +57,11 @@ def ingest(
     limit: int = typer.Option(0, help="cap universe size (0 = all)"),
     only: str = typer.Option("", help="comma list: prices,technicals,edgar,fundamentals,"
                                       "clinical,fda,insiders,shortvol,institutions,molecules,"
-                                      "options,news,sentiment,finbert,catalysts,mollinks,"
-                                      "score,signals,backtest"),
-    preset: str = typer.Option("", help="'fast' (news+score, for a frequent cron) or "
-                                        "'full' (everything, for a 2-3x/day cron)"),
+                                      "options,halts,filingslive,news,sentiment,finbert,pdufa,"
+                                      "ai,catalysts,mollinks,score,signals,backtest"),
+    preset: str = typer.Option("", help="'fast' (news+score, frequent cron), 'open' "
+                                        "(prices+news+score, the US open) or 'full' "
+                                        "(everything, after the close)"),
 ) -> None:
     """Run the ingestion + processing pipeline."""
     from . import pipeline
@@ -66,7 +70,11 @@ def ingest(
     lim = limit or None
 
     if preset == "fast":
-        only = "news,sentiment,catalysts,mollinks,score,signals"
+        only = "news,sentiment,ai,catalysts,mollinks,score,signals"
+    elif preset == "open":
+        # the US open: fresh prices + overnight news/filings, re-scored - the heavy
+        # sources (EDGAR history, fundamentals, 13F, options) wait for the close run
+        only = "prices,technicals,news,sentiment,pdufa,ai,catalysts,mollinks,score,signals"
     elif preset == "full":
         only = ""  # full refresh path below
 
@@ -97,11 +105,15 @@ def ingest(
             "score": lambda: pipeline.run_job("score", _m("process.score").run),
             "signals": lambda: pipeline.run_job("signals", _m("process.signals").run),
             "backtest": lambda: pipeline.run_job("backtest", _m("process.backtest").run),
+            "halts": lambda: pipeline.run_job("halts", _m("ingest.halts").run),
+            "filingslive": lambda: pipeline.run_job("filings_live", _m("ingest.edgar_live").run),
+            "pdufa": lambda: pipeline.run_job("pdufa", _m("ingest.pdufa").run),
+            "ai": lambda: pipeline.run_job("ai", _m("ai.jobs").run),
         }
         for name in ["prices", "technicals", "edgar", "fundamentals", "clinical",
                      "fda", "insiders", "shortvol", "institutions", "molecules", "options",
-                     "news", "sentiment", "finbert", "catalysts", "mollinks", "score",
-                     "signals", "backtest"]:
+                     "halts", "filingslive", "news", "sentiment", "finbert", "pdufa", "ai",
+                     "catalysts", "mollinks", "score", "signals", "backtest"]:
             if name in wanted:
                 console.rule(name)
                 console.print(jobmap[name]())
@@ -221,6 +233,55 @@ def import_sqlite(
                     f"COALESCE((SELECT MAX(id) FROM {name}),1), true)")
         console.print("  [dim]postgres sequences reset[/dim]")
     console.print("[green]import complete[/green]")
+
+
+@app.command()
+def pulse(deliver: bool = typer.Option(True, "--deliver/--no-deliver",
+                                       help="push new alerts to the configured channels")) -> None:
+    """One real-time pass: trading halts, SEC filings from the last minutes, wire
+    headlines, live movers (with why they moved) and alerts."""
+    from .db import init_db
+    from .realtime import acquire_lease, pulse as _pulse, release_lease
+
+    init_db()
+    if not acquire_lease(ttl_s=600):
+        console.print("[yellow]another pulse holds the lease - skipping[/yellow]")
+        return
+    try:
+        console.print_json(data=_pulse(deliver=deliver))
+    finally:
+        release_lease()
+
+
+@app.command()
+def worker(interval: int = typer.Option(300, help="seconds between pulses"),
+           once: bool = typer.Option(False, help="run a single pass and exit")) -> None:
+    """Always-on loop (Docker / launchd): the pulse every INTERVAL seconds during
+    the US session, idle otherwise."""
+    from .db import init_db
+    from .realtime import worker as _worker
+
+    init_db()
+    _worker(interval_s=interval, once=once)
+
+
+@app.command("ai")
+def ai_cmd(brief: bool = typer.Option(False, help="also write + deliver the daily brief"),
+           only: str = typer.Option("", help="news,filings,risk,brief")) -> None:
+    """Background AI jobs: headline events, 8-K summaries, risk-factor diffs,
+    daily brief. No-op without an LLM key (Settings page)."""
+    from .ai import jobs
+
+    if only:
+        fns = {"news": jobs.news_events, "filings": jobs.filing_summaries,
+               "risk": jobs.risk_diffs, "brief": lambda: jobs.daily_brief(force=True)}
+        for n in [x.strip() for x in only.split(",") if x.strip()]:
+            console.rule(n)
+            console.print(fns[n]())
+        return
+    from .pipeline import run_job
+
+    console.print(run_job("ai", jobs.run, brief))
 
 
 @app.command()

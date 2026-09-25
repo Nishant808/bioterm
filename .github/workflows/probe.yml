@@ -17,7 +17,7 @@ on:
     paths:
       - "src/bioterm/**"
       - "config/**"
-      - "dashboard/_live.py"
+      - "dashboard/**"
       - ".github/workflows/probe.yml"
 
 concurrency:
@@ -40,6 +40,7 @@ jobs:
     env:
       BIOTERM_SEC_USER_AGENT: ${{ secrets.SEC_UA }}
       DATABASE_URL: postgresql+psycopg://postgres:probe@localhost:5432/bioterm
+      BIOTERM_INAPP_WORKER: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -67,6 +68,10 @@ jobs:
         run: uv run bioterm ingest --limit 70 --only shortvol,institutions,molecules,options
       - name: News + NLP
         run: uv run bioterm ingest --limit 25 --only news,sentiment,finbert
+      - name: Real-time (halts, live filings, wires, PDUFA/AdCom, pulse)
+        run: |
+          uv run bioterm ingest --only halts,filingslive,pdufa
+          uv run bioterm pulse --no-deliver
       - name: Derived
         run: uv run bioterm ingest --only catalysts,mollinks,score,signals,backtest,insiders
       - name: Report
@@ -111,6 +116,13 @@ jobs:
           q("top calls", "SELECT ticker, label, net, bull, bear, n_buy, n_sell, regime FROM signal_scores ORDER BY net DESC LIMIT 10")
           q("bottom calls", "SELECT ticker, label, net, bull, bear, n_buy, n_sell FROM signal_scores ORDER BY net ASC LIMIT 10")
           q("molecule catalysts", "SELECT ticker, type, date, title FROM catalysts WHERE source = 'molecule-tracking' LIMIT 10")
+          q("halts", "SELECT symbol, ticker, reason, halt_at, resumption_trade_time FROM halts ORDER BY halt_at DESC LIMIT 12")
+          q("halt count", "SELECT COUNT(*) AS n, COUNT(ticker) AS universe FROM halts")
+          q("live filings", "SELECT ticker, form, items, filed_date, url FROM filings WHERE source = 'live' ORDER BY fetched_at DESC LIMIT 15")
+          q("news by source (wires)", "SELECT source, COUNT(*) AS n FROM news GROUP BY source ORDER BY n DESC")
+          q("pdufa/adcom extracted", "SELECT id, kind, ticker, pdufa_date, adcom_date, drug, confidence, substr(summary, 1, 90) AS summary FROM news_llm ORDER BY scored_at DESC LIMIT 20")
+          q("regulatory catalysts", "SELECT ticker, type, date, source, substr(title, 1, 80) AS title FROM catalysts WHERE type IN ('pdufa','adcom') ORDER BY date LIMIT 20")
+          q("app meta (pulse)", "SELECT key, substr(value, 1, 400) AS value FROM app_meta WHERE key IN ('worker_state','movers_live')")
           try:
               from bioterm.process import backtest as bt
               from bioterm.process import smart_money as sm
@@ -139,6 +151,10 @@ jobs:
           print(live.indicators(d).iloc[-1][["close", "sma50", "rsi14", "ret_1m"]].to_dict())
           ok = {"VRTX", "MRNA", "XBI"} <= {k for k, v in q.items() if v["source"] == "live"}
           ok = ok and src == "live" and len(d) > 400 and isrc == "live" and len(i) > 20
+          from bioterm import quotes
+          nq = quotes._nasdaq("VRTX")
+          print("nasdaq failover:", nq)
+          ok = ok and nq is not None and nq["price"] > 0
           sys.exit(0 if ok else 1)
           EOF
       - name: Dashboard pages on this database
@@ -149,7 +165,7 @@ jobs:
           from streamlit.testing.v1 import AppTest
           pages = ["overview", "signals", "focus", "stock", "smart_money", "molecules",
                    "backtest", "catalysts", "news", "watchlist", "compare", "alerts",
-                   "portfolio"]
+                   "portfolio", "market", "copilot", "settings", "health"]
           bad = 0
           for page in pages:
               at = AppTest.from_file("dashboard/Home.py", default_timeout=120)

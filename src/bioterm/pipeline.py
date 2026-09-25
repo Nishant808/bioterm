@@ -111,6 +111,15 @@ def refresh_nlp(_: list[str] | None = None) -> dict:
     return {"finbert": run_job("finbert", finbert.run)}
 
 
+def refresh_intel(_: list[str] | None = None) -> dict:
+    """PDUFA / AdCom dates from primary sources, then the AI jobs (no-op without
+    an LLM key) - before recompute, so the dates reach the catalyst list."""
+    from .ai import jobs as ai_jobs
+    from .ingest import pdufa
+
+    return {"pdufa": run_job("pdufa", pdufa.run), "ai": run_job("ai", ai_jobs.run)}
+
+
 def recompute(_: list[str] | None = None) -> dict:
     out = {}
     out["catalysts"] = run_job("catalysts", catalysts.run)
@@ -140,6 +149,7 @@ def run_full_refresh(limit: int | None = None, skip_universe: bool = False) -> d
         "insiders": refresh_insiders(),
         "alt_data": refresh_alt_data(tickers),
         "nlp": refresh_nlp(),
+        "intel": refresh_intel(),
         "recompute": recompute(),
         "backtest": run_backtest(),
     }

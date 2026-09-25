@@ -373,7 +373,9 @@ def headline_rows(df: pd.DataFrame, *, show_rank: dict | None = None,
 
 SOURCE_LABELS = {"news-extraction": "from news", "clinicaltrials.gov": "ClinicalTrials.gov",
                  "yfinance": "earnings calendar", "manual": "pinned by you",
-                 "molecule-tracking": "molecule tracking"}
+                 "molecule-tracking": "molecule tracking", "ai-news": "AI-read headline",
+                 "ai-filing": "AI-read filing", "sec-filing": "SEC filing",
+                 "fda-notice": "FDA meeting notice"}
 
 
 def catalyst_title(title) -> str:
@@ -423,6 +425,22 @@ def alert_detail(detail) -> str:
     if sep and head in CATALYST_TYPES:
         d = catalyst_label(head) + sep + rest
     return d
+
+
+def ticker_tape(items: list[tuple[str, float, float]]) -> None:
+    """A scrolling strip of live quotes - (ticker, price, change %) - that pauses
+    on hover and sits still for reduced-motion users. Each quote links to the
+    stock page."""
+    if not items:
+        return
+    cells = "".join(
+        f"<a class='bt-tape-i' href='Stock_Detail?ticker={esc(t)}' target='_self'>"
+        f"<b>{esc(t)}</b><span>{p:,.2f}</span>"
+        f"<span style='color:{POS if c > 0 else NEG if c < 0 else MUTED}'>{c:+.2%}</span></a>"
+        for t, p, c in items)
+    st.html(f"<div class='bt-tape' role='marquee' aria-label='Live quotes'>"
+            f"<div class='bt-tape-track'>{cells}<span aria-hidden='true' class='bt-tape-dup'>"
+            f"{cells}</span></div></div>")
 
 
 def status_rows(items: list[tuple[str, str, str]]) -> None:
@@ -790,6 +808,20 @@ _CSS = f"""
 .bt-row-kind {{ color: var(--bt-muted); font-size: .8rem; }}
 .bt-dot {{ width: .55rem; height: .55rem; border-radius: 50%; display: inline-block;
           margin-top: .45rem; }}
+.bt-tape {{ overflow: hidden; border-bottom: 1px solid var(--bt-border); margin: -.4rem 0 .6rem;
+           -webkit-mask-image: linear-gradient(90deg, transparent, #000 3%, #000 97%, transparent);
+           mask-image: linear-gradient(90deg, transparent, #000 3%, #000 97%, transparent); }}
+.bt-tape-track {{ display: inline-flex; gap: 1.6rem; white-space: nowrap; padding: .32rem 0;
+                 animation: bt-tape 70s linear infinite; }}
+.bt-tape-dup {{ display: inline-flex; gap: 1.6rem; }}
+.bt-tape:hover .bt-tape-track {{ animation-play-state: paused; }}
+.bt-tape-i {{ display: inline-flex; gap: .45rem; font: 500 .78rem 'JetBrains Mono', monospace;
+             color: var(--bt-text2); text-decoration: none; }}
+.bt-tape-i b {{ color: var(--bt-text); font-weight: 600; }}
+.bt-tape-i:hover b {{ color: var(--bt-accent); }}
+@keyframes bt-tape {{ from {{ transform: translateX(0); }} to {{ transform: translateX(-50%); }} }}
+@media (prefers-reduced-motion: reduce) {{ .bt-tape {{ overflow-x: auto; }}
+  .bt-tape-dup {{ display: none; }} }}
 .bt-tk {{ font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 600;
   font-size: .8rem; color: var(--bt-text); letter-spacing: .01em; }}
 .bt-tk em {{ font-style: normal; color: var(--bt-faint); font-weight: 500; margin-left: 2px; }}

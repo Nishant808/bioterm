@@ -554,11 +554,11 @@ halts = Table(
     Column("symbol", String(16), index=True),
     Column("ticker", String(16), index=True),         # universe match, if any
     Column("issue_name", String(200)),
-    Column("market", String(16)),
-    Column("reason", String(8)),
-    Column("halt_at", DateTime, index=True),          # New York time, naive
+    Column("market", String(24)),
+    Column("reason", String(12)),                     # Nasdaq reason code (T1, LUDP, H10 ...)
+    Column("halt_at", DateTime, index=True),          # UTC
     Column("resumption_date", String(16)),
-    Column("resumption_trade_time", String(16)),
+    Column("resumption_trade_time", String(32)),
     Column("fetched_at", DateTime),
 )
 

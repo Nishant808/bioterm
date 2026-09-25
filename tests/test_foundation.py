@@ -46,7 +46,11 @@ def test_session_and_gates():
     assert not cal.gate("open", at(2026, 9, 25, 10, 40))     # the other DST copy
     assert cal.gate("close", at(2026, 9, 25, 16, 10))
     assert cal.gate("close", at(2026, 11, 27, 13, 20))       # early-close day
-    assert not cal.gate("close", at(2026, 11, 27, 16, 10))
+    assert cal.gate("close", at(2026, 11, 27, 16, 10))       # regular cron still lands
+    assert not cal.gate("close", at(2026, 11, 27, 12, 50))
+    assert cal.window(at(2026, 9, 25, 9, 40)) == "open"
+    assert cal.window(at(2026, 9, 25, 16, 10)) == "close"
+    assert cal.window(at(2026, 9, 25, 12, 0)) is None
     assert not cal.gate("pulse", at(2026, 9, 26, 12, 0))     # Saturday
     assert cal.previous_trading_day(date(2026, 11, 27)) == date(2026, 11, 25)
 

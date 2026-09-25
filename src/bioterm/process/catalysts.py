@@ -1,10 +1,12 @@
 """Catalyst construction -> ``catalysts`` table.
 
-Merges four sources into one dated, typed, forward-looking catalyst list:
+Merges these sources into one dated, typed, forward-looking catalyst list:
   1. ClinicalTrials.gov primary-completion dates for Phase 1-3 studies
   2. Dates extracted by regex from recent news ("PDUFA date of ...", "topline in Q4 2026")
-  3. Next earnings date (yfinance)
-  4. Manually pinned catalysts (config/catalysts_manual.yml)
+  3. PDUFA / AdCom dates stated in SEC filings, FDA meeting notices (Federal
+     Register) and AI-read headlines (``news_llm``)
+  4. Next earnings date (yfinance)
+  5. Manually pinned catalysts (dashboard / config/catalysts_manual.yml)
 
 ``months_away`` is signed: negative = already passed (kept for a short grace window
 because "data expected imminently" is itself a catalyst).
@@ -352,6 +354,48 @@ def _from_news(horizon_end: date) -> list[dict]:
     return out
 
 
+def _from_extracted_events(horizon_end: date) -> list[dict]:
+    """PDUFA / AdCom dates stated in filings, FDA meeting notices and headlines -
+    read by ingest/pdufa.py (regex + Federal Register) and the AI jobs, all kept
+    in ``news_llm``."""
+    try:
+        df = read_sql("SELECT l.id, l.kind, l.ticker, l.drug, l.indication, l.pdufa_date, "
+                      "l.adcom_date, l.summary, l.confidence, n.url AS news_url, "
+                      "f.url AS filing_url FROM news_llm l "
+                      "LEFT JOIN news n ON n.id = l.id LEFT JOIN filings f ON f.id = l.id "
+                      "WHERE l.ticker IS NOT NULL AND (l.pdufa_date IS NOT NULL "
+                      "OR l.adcom_date IS NOT NULL)")
+    except Exception:  # noqa: BLE001 - table appears with session 10
+        return []
+    today = date.today()
+    src = {"news": "ai-news", "filing": "ai-filing", "pdufa": "sec-filing", "adcom": "fda-notice"}
+    out = []
+    for r in df.itertuples():
+        conf_v = float(r.confidence or 0)
+        if conf_v < 0.6:
+            continue
+        what = " · ".join(x for x in (r.drug, r.indication) if isinstance(x, str) and x)
+        for ctype, col in (("pdufa", r.pdufa_date), ("adcom", r.adcom_date)):
+            d = pd.to_datetime(col, errors="coerce")
+            if pd.isna(d):
+                continue
+            d = d.date()
+            if d < today - relativedelta(days=15) or d > horizon_end + relativedelta(months=6):
+                continue
+            label = "PDUFA date" if ctype == "pdufa" else "FDA advisory committee"
+            out.append({
+                "ticker": r.ticker, "type": ctype,
+                "title": f"{label}{f' - {what}' if what else ''}"
+                         + (f" · {r.summary}" if isinstance(r.summary, str) and r.summary
+                            and r.kind in ("news", "filing") else ""),
+                "date": d, "confidence": "high" if conf_v >= 0.85 else "medium",
+                "source": src.get(r.kind, "ai-news"),
+                "url": (r.filing_url if isinstance(r.filing_url, str) else None)
+                or (r.news_url if isinstance(r.news_url, str) else None) or "",
+            })
+    return out
+
+
 def _from_earnings() -> list[dict]:
     df = read_sql("SELECT ticker, next_earnings_date FROM fundamentals "
                   "WHERE next_earnings_date IS NOT NULL")
@@ -400,6 +444,7 @@ def run() -> dict:
         _from_clinical(horizon_end)
         + _from_molecule_trials(horizon_end)
         + _from_news(horizon_end)
+        + _from_extracted_events(horizon_end)
         + _from_earnings()
         + _from_manual()
     )

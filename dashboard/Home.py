@@ -53,6 +53,7 @@ _fresh("_shared")  # secrets bridge + src/ on sys.path - must precede bioterm im
 _fresh("_auth")
 _ui = _fresh("_ui")
 _fresh("_live")
+_fresh("_worker").ensure_started()
 
 
 def _page(path: str, title: str, icon: str, url_path: str | None = None,
@@ -77,6 +78,7 @@ nav = st.navigation(
             _page("backtest.py", "Backtest", "history", "Backtest"),
         ],
         "Markets": [
+            _page("market.py", "Market", "grid_view", "Market"),
             _page("catalysts.py", "Catalysts", "event_upcoming", "Catalyst_Calendar"),
             _page("news.py", "News", "newspaper", "News_Firehose"),
             _page("compare.py", "Compare", "compare_arrows", "Compare"),
@@ -97,6 +99,26 @@ st.set_page_config(page_title=f"{nav.title} · BioTerm")
 # Streamlit always shows icon_image
 st.logo(str(_ASSETS / "logo.svg"), size="large", icon_image=str(_ASSETS / "logo.svg"))
 _ui.inject_css()
+
+
+def _tape() -> None:
+    """Live quote strip over every page: the sector ETFs, then the watchlist."""
+    import _live
+    from _shared import q
+
+    wl = q("SELECT ticker FROM watchlist ORDER BY ticker")["ticker"].tolist()
+    if not wl:
+        return
+    names = ["XBI", "IBB", *wl[:40]]
+    qs = _live.quotes(names)
+    _ui.ticker_tape([(t, qs[t]["price"], qs[t]["change_pct"]) for t in names
+                     if t in qs and qs[t].get("change_pct") == qs[t].get("change_pct")])
+
+
+try:
+    _tape()
+except Exception as exc:  # noqa: BLE001 - the tape must never break a page
+    log.info("ticker tape skipped: %s", exc)
 
 try:
     nav.run()

@@ -24,5 +24,18 @@ feeds:
   - name: "Google News - biotech FDA"
     url: "https://news.google.com/rss/search?q=biotech%20(FDA%20OR%20%22phase%203%22%20OR%20topline)%20when%3A7d&hl=en-US&gl=US&ceid=US:en"
     scope: sector
+  # Company press-release wires (`scope: wire`) - read by the pulse every run, so a
+  # topline / FDA / financing release reaches the terminal within minutes.
+  - name: "GlobeNewswire - Biotechnology"
+    url: "https://www.globenewswire.com/RssFeed/industry/4573-Biotechnology/feedTitle/GlobeNewswire%20-%20Industry%20News%20on%20Biotechnology"
+    scope: wire
+  - name: "GlobeNewswire - Pharmaceuticals"
+    url: "https://www.globenewswire.com/RssFeed/industry/4577-Pharmaceuticals/feedTitle/GlobeNewswire%20-%20Industry%20News%20on%20Pharmaceuticals"
+    scope: wire
+  - name: "PR Newswire - Health"
+    url: "https://www.prnewswire.com/rss/health-latest-news/health-latest-news-list.rss"
+    scope: wire
+  # Business Wire's public RSS needs per-industry feed ids generated on its site -
+  # add one here (scope: wire) if you have it.
   # Endpoints News (endpts.com) and some Fierce sub-feeds block non-browser RSS clients (403) - omitted.
   # SEC 8-K filings are ingested directly via ingest/edgar.py, not RSS.

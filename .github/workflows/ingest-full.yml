@@ -1,19 +1,22 @@
-# Full pipeline: universe + prices + technicals + EDGAR + fundamentals + clinical
-# trials + FDA + insiders + news + alt data (13F, FINRA short volume, options,
-# per-molecule trials) + FinBERT + catalysts + Focus Score + signals + backtest.
-# ~15-23 min (the first run backfilled 5y of prices, 4 quarters of 13F and 30
-# days of short volume - runs are incremental since).
+# Scheduled refreshes at the US open and after the close (NYSE calendar aware).
 #
-# Secrets: DATABASE_URL, SEC_UA
+#   open  (09:35 New York) - preset "open": fresh prices + overnight news and
+#          filings, PDUFA dates, AI headline events, catalysts, Focus Score,
+#          signals, alerts. ~6-8 min.
+#   close (16:10 New York) - the full pipeline: universe, prices, EDGAR,
+#          fundamentals, trials (+ change radar), FDA, insiders, news, 13F,
+#          short volume, options, molecules, FinBERT, PDUFA/AdCom, AI jobs,
+#          catalysts, score, signals, backtest - then alerts and the AI daily
+#          brief. ~18-25 min.
 #
-# Twice per US trading day: at the OPEN (09:35 New York) and after the CLOSE
-# (16:10 New York). Cron is UTC and New York shifts with daylight saving, so each
-# slot is scheduled at both UTC offsets and the `gate` step keeps only the one that
-# lands inside the New York window (the other exits in seconds). GitHub can start
-# a scheduled run late, so each window is an hour wide.
-#   ~44 runs/month · ~18 min · ~800 min/month (+ ~45 min of gate no-ops)
-# With ingest-fast (4/day) that's ~1,450 min/month of the 2,000 free.
-# The dashboard itself shows live Yahoo prices; these runs feed the engines.
+# Secrets: DATABASE_URL, SEC_UA (+ optional TELEGRAM_* - channels and LLM keys
+# are normally stored on the dashboard's Settings page, encrypted in the DB).
+#
+# Cron is UTC and New York shifts with daylight saving, so each slot runs at both
+# UTC offsets; the gate (src/bioterm/market_calendar.py, NYSE holidays and early
+# closes included) keeps only the copy inside the New York window. The other copy
+# and holiday runs exit after the checkout.
+#   ~21 open (~7 min) + ~21 close (~22 min) + ~42 gate no-ops ≈ 650 min/month
 
 name: ingest-full
 
@@ -21,7 +24,13 @@ on:
   schedule:
     - cron: "35 13,14 * * 1-5"   # market open  - 09:35 ET (13:35 UTC in EDT, 14:35 in EST)
     - cron: "10 20,21 * * 1-5"   # market close - 16:10 ET (20:10 UTC in EDT, 21:10 in EST)
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      window:
+        description: "open (light) or close (full)"
+        default: close
+        type: choice
+        options: [close, open]
 
 concurrency:
   group: bioterm-ingest
@@ -30,54 +39,69 @@ concurrency:
 jobs:
   full:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 60
     steps:
-      - name: Gate on the New York session
+      - uses: actions/checkout@v4
+      - name: Gate on the NYSE calendar
         id: gate
         run: |
-          now=$(TZ=America/New_York date +%H%M)
-          if [ "${{ github.event_name }}" != "schedule" ]; then run=true
-          elif [ "$now" -ge 0930 ] && [ "$now" -lt 1030 ]; then run=true    # open
-          elif [ "$now" -ge 1600 ] && [ "$now" -lt 1700 ]; then run=true    # close
-          else run=false; fi
-          echo "New York $now -> run=$run"
-          echo "run=$run" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
-        if: steps.gate.outputs.run == 'true'
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "window=${{ inputs.window || 'close' }}" >> "$GITHUB_OUTPUT"
+          else
+            python3 src/bioterm/market_calendar.py gate session >> "$GITHUB_OUTPUT"
+          fi
       - uses: astral-sh/setup-uv@v5
         if: steps.gate.outputs.run == 'true'
         with:
           python-version: "3.12"
+          enable-cache: true
       - run: uv sync --no-dev
         if: steps.gate.outputs.run == 'true'
       # FinBERT: CPU-only torch + transformers, installed next to (not in) the locked
       # env so the dashboard/lockfile stay light. `uv run` never removes them (inexact
       # sync). Without them process/finbert.py is a no-op and VADER tone stays.
       - name: NLP extra (FinBERT)
-        if: steps.gate.outputs.run == 'true'
+        if: steps.gate.outputs.run == 'true' && steps.gate.outputs.window == 'close'
         continue-on-error: true
         run: |
           uv pip install --index-url https://download.pytorch.org/whl/cpu torch
           uv pip install "transformers>=4.44"
       - name: Cache FinBERT model
-        if: steps.gate.outputs.run == 'true'
+        if: steps.gate.outputs.run == 'true' && steps.gate.outputs.window == 'close'
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
           key: hf-finbert-v1
-      - name: Full refresh
+      - name: Refresh (${{ steps.gate.outputs.window }})
         if: steps.gate.outputs.run == 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           BIOTERM_SEC_USER_AGENT: ${{ secrets.SEC_UA }}
-        run: uv run bioterm ingest --preset full
+        run: |
+          uv run bioterm init-db
+          if [ "${{ steps.gate.outputs.window }}" = "open" ]; then
+            uv run bioterm ingest --preset open
+          else
+            uv run bioterm ingest --preset full
+          fi
       - name: Alerts
         if: steps.gate.outputs.run == 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BIOTERM_SEC_USER_AGENT: ${{ secrets.SEC_UA }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: uv run bioterm alerts
+      - name: AI daily brief
+        if: steps.gate.outputs.run == 'true' && steps.gate.outputs.window == 'close'
+        continue-on-error: true
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BIOTERM_SEC_USER_AGENT: ${{ secrets.SEC_UA }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: uv run bioterm ai --only brief
       - name: Summary
         if: always() && steps.gate.outputs.run == 'true'
         env:

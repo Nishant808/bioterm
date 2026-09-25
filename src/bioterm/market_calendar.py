@@ -134,13 +134,22 @@ def session(now: datetime | None = None) -> tuple[str, str]:
     return "closed", "Market closed"
 
 
+def window(now: datetime | None = None) -> str | None:
+    """Which scheduled full-run window ``now`` falls in: "open", "close" or None."""
+    for k in ("open", "close"):
+        if gate(k, now):
+            return k
+    return None
+
+
 def gate(kind: str, now: datetime | None = None) -> bool:
     """Should a scheduled job run now? Windows are an hour wide because GitHub
     can start a cron run late; each UTC cron fires twice a day (DST) and only the
     copy that lands inside the New York window proceeds.
 
     open  : 09:30-10:30 ET on a trading day
-    close : close time to +1h (16:00-17:00, or 13:00-14:00 on early-close days)
+    close : the close to 17:00 ET (16:00-17:00; 13:00-17:00 on early-close days, so
+            the regular 16:10 run still lands inside it)
     pulse : 07:00-20:00 ET on a trading day (pre-market through after-hours)
     """
     t = (now or datetime.now(NY)).astimezone(NY)
@@ -153,7 +162,7 @@ def gate(kind: str, now: datetime | None = None) -> bool:
     if kind == "close":
         c = close_time(d)
         start = c.hour * 60 + c.minute
-        return start <= mins < start + 60
+        return start <= mins < max(start + 60, 17 * 60)
     if kind == "pulse":
         return 7 * 60 <= mins < 20 * 60
     raise ValueError(f"unknown gate {kind!r}")
@@ -161,7 +170,12 @@ def gate(kind: str, now: datetime | None = None) -> bool:
 
 if __name__ == "__main__":                   # pragma: no cover - exercised in Actions
     if len(sys.argv) >= 3 and sys.argv[1] == "gate":
-        ok = gate(sys.argv[2])
+        if sys.argv[2] == "session":            # the open-or-close full-run gate
+            w = window()
+            ok = w is not None
+            print(f"window={w or 'none'}")
+        else:
+            ok = gate(sys.argv[2])
         print(f"New York {datetime.now(NY):%Y-%m-%d %H:%M} -> {sys.argv[2]} run={str(ok).lower()}",
               file=sys.stderr)
         print(f"run={str(ok).lower()}")

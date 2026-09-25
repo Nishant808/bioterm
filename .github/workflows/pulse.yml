@@ -1,0 +1,47 @@
+# The live pulse: Nasdaq trading halts, SEC filings from the last minutes (8-K,
+# 6-K, 424B, S-3, 13D/13G), wire press releases, live movers with "why it moved",
+# then alerts to every configured channel. ~1 min.
+#
+# Hourly from 07:00 to 20:00 New York on trading days (NYSE calendar gate).
+# The dashboard runs the same pulse every 5 minutes while it is awake, and
+# `bioterm worker` (deploy/) does it on an always-on host - all three share a
+# database lease, so they never double-fire.
+#   ~12 runs/day · ~21 trading days · ~1.5 min ≈ 380 Actions min/month
+
+name: pulse
+
+on:
+  schedule:
+    - cron: "5 11-23 * * 1-5"
+  workflow_dispatch: {}
+
+concurrency:
+  group: bioterm-pulse
+  cancel-in-progress: true
+
+jobs:
+  pulse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gate on the NYSE calendar
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then echo "run=true" >> "$GITHUB_OUTPUT"
+          else python3 src/bioterm/market_calendar.py gate pulse >> "$GITHUB_OUTPUT"; fi
+      - uses: astral-sh/setup-uv@v5
+        if: steps.gate.outputs.run == 'true'
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --no-dev
+        if: steps.gate.outputs.run == 'true'
+      - name: Pulse
+        if: steps.gate.outputs.run == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BIOTERM_SEC_USER_AGENT: ${{ secrets.SEC_UA }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: uv run bioterm pulse

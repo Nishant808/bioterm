@@ -8,6 +8,8 @@ def _isolated_db(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db}")
     # the dashboard's live Yahoo prices -> stored-close fallback (no network in tests)
     monkeypatch.setenv("BIOTERM_LIVE_PRICES", "0")
+    # no background pulse thread (network) inside the dashboard tests
+    monkeypatch.setenv("BIOTERM_INAPP_WORKER", "0")
     import bioterm.db as db_mod
     import bioterm.store as store_mod
 

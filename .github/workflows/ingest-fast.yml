@@ -1,20 +1,21 @@
-# Fast pass: sector news + per-ticker Google News + sentiment + catalysts +
-# molecule links + Focus Score + BUY/SELL signals + alert check. ~4-8 min. Keeps
-# "Stocks in Focus", the signal board and the news feed current.
+# Fast pass: sector + wire news, per-ticker Google News, sentiment, AI headline
+# events, catalysts, molecule links, Focus Score, BUY/SELL signals, alert check.
+# ~4-8 min. Keeps "Stocks in Focus", the signal board and the news feed current
+# between the open and close runs (ingest-full.yml); the hourly pulse
+# (pulse.yml) covers halts, filings and wires in between.
 #
 # Secrets: DATABASE_URL, SEC_UA  (+ optional TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)
 #
-# Cadence tuned for a PRIVATE repo (2000 Actions-min/month free tier), fitted
-# around the full runs at the US open and close (ingest-full.yml):
-#   12:00 · 16:00 · 18:30 · 23:00 UTC  (≈ pre-market, midday, afternoon, evening ET)
-#   4 runs/day · ~5 min each · ~600 min/month
+# Cadence for a PRIVATE repo (2000 Actions-min/month free tier):
+#   16:00 · 18:30 · 23:00 UTC (≈ midday, afternoon, evening New York)
+#   3 runs/day · ~5 min each · ~450 min/month
 # On a public repo you can widen this to "*/30 * * * *" (unlimited minutes).
 
 name: ingest-fast
 
 on:
   schedule:
-    - cron: "0 12,16,23 * * *"
+    - cron: "0 16,23 * * *"
     - cron: "30 18 * * *"
   workflow_dispatch: {}
 
@@ -31,6 +32,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+          enable-cache: true
       - run: uv sync --no-dev
       - name: Fast refresh
         env:
@@ -42,6 +44,7 @@ jobs:
       - name: Alerts
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BIOTERM_SEC_USER_AGENT: ${{ secrets.SEC_UA }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: uv run bioterm alerts

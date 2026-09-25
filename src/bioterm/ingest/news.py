@@ -115,7 +115,11 @@ def _google_news_url(query: str) -> str:
     return f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
 
 
-def run(tickers: list[str] | None = None, google: bool | None = None) -> dict:
+def run(tickers: list[str] | None = None, google: bool | None = None,
+        scopes: tuple[str, ...] = ("sector", "wire")) -> dict:
+    """``scopes`` picks which configured feeds to read: "sector" (trade press) and
+    "wire" (company press-release wires). The pulse reads only the wires, with no
+    per-ticker Google queries, so it finishes in seconds."""
     cfg = load_settings()
     lookback = int(cfg.get("ingest", "news_lookback_days", default=45))
     cutoff = datetime.now(timezone.utc) - pd.Timedelta(days=lookback)
@@ -157,16 +161,17 @@ def run(tickers: list[str] | None = None, google: bool | None = None) -> dict:
             "fetched_at": now,
         }
 
-    # 1. sector feeds
+    # 1. sector + wire feeds
     for feed in cfg.feeds:
-        if feed.get("scope") != "sector":
+        if feed.get("scope") not in scopes:
             continue
         for entry in _parse_feed(feed["url"]):
             _add(entry, feed.get("name", feed["url"]))
 
     # 2. per-ticker Google News
     if google is None:
-        google = bool(cfg.get("ingest", "news_google_per_ticker", default=True))
+        google = bool(cfg.get("ingest", "news_google_per_ticker", default=True)) \
+            and "sector" in scopes
     if google:
         secs = read_sql("SELECT ticker, name FROM securities")
         name_by_ticker = dict(zip(secs["ticker"], secs["name"]))
@@ -182,5 +187,6 @@ def run(tickers: list[str] | None = None, google: bool | None = None) -> dict:
 
     reapply()
     log.info("news: %d headlines (%d feeds + %d ticker queries)",
-             n, sum(1 for f in cfg.feeds if f.get("scope") == "sector"), len(tickers))
+             n, sum(1 for f in cfg.feeds if f.get("scope") in scopes),
+             len(tickers) if google else 0)
     return {"rows": n}
