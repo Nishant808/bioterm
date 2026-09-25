@@ -113,11 +113,11 @@ with tab_rules:
                                              float(rules.get("readthrough_pct", 0.2)), 0.01,
                                              format="%.2f")
     rules["filing_alerts"] = st.segmented_control(
-        "SEC filing alerts", ["default", "watchlist", "all", "off"],
+        "SEC filing alerts", ["default", "watchlist", "all", "sector", "off"],
         default=rules.get("filing_alerts", "default"), required=True,
         format_func={"default": "Dilution & 13D for all, 8-K for watchlist",
-                     "watchlist": "Watchlist only", "all": "Every universe name",
-                     "off": "Off"}.get)
+                     "watchlist": "Watchlist only", "all": "Every core name",
+                     "sector": "Whole sector (incl. extended)", "off": "Off"}.get)
     all_tags = tags_seen()
     base = [t for t in rules["event_tags"] if not all_tags or t in all_tags]
     rules["event_tags"] = st.multiselect("High-signal headline tags",

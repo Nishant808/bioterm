@@ -372,3 +372,11 @@ def test_unclaimed_hosted_terminal_keeps_keys_and_copilot_owner_only(monkeypatch
     at = _render("copilot")
     assert not at.exception
     assert not any(t.key == "copilot_q" for t in at.text_input) and not at.chat_input
+
+
+def test_core_name_with_null_tier_has_no_coverage_badge():
+    _seed()
+    at = _render("stock", ticker="AAAA")
+    assert not at.exception
+    html = " ".join(h.value or "" for h in at.get("html"))
+    assert "No longer covered" not in html and "Extended coverage" not in html

@@ -223,16 +223,21 @@ def _halt_alerts(rules: dict) -> list[dict]:
 def _filing_alerts(rules: dict) -> list[dict]:
     from .store import get_watchlist
 
-    mode = rules.get("filing_alerts", "default")      # default / watchlist / all / off
+    # default / watchlist / all (core universe) / sector (+ extended tier) / off
+    mode = rules.get("filing_alerts", "default")
     if mode == "off":
         return []
     wl = {w["ticker"].upper() for w in get_watchlist()}
-    df = _recent("SELECT f.id, f.ticker, f.form, f.items, f.url, s.summary FROM filings f "
-                 "LEFT JOIN filing_summaries s ON s.accession = f.id "
+    df = _recent("SELECT f.id, f.ticker, f.form, f.items, f.url, s.summary, sec.tier "
+                 "FROM filings f LEFT JOIN filing_summaries s ON s.accession = f.id "
+                 "LEFT JOIN securities sec ON sec.ticker = f.ticker "
                  "WHERE f.filed_date >= :d", {"d": (datetime.now(timezone.utc).date()
                                                     - timedelta(days=1)).isoformat()})
     out = []
     for r in df.itertuples():
+        tier = r.tier if isinstance(r.tier, str) and r.tier else "core"   # NULL/NaN = core
+        if mode != "sector" and tier != "core":
+            continue          # extended-tier filings are stored and shown, not alerted
         form = str(r.form or "").upper()
         kind = next((v for k, v in FILING_KINDS.items() if form.startswith(k)), None)
         if kind is None:

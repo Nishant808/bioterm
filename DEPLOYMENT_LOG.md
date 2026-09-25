@@ -840,7 +840,7 @@ min/month**. A public repo or the Docker worker lifts the ceiling.
 — real dependency lines, so the push does the clean rebuild the new `bioterm.*`
 modules need.
 
-**Tests:** 270 (SQLite) + the Postgres probe.
+**Tests:** 271 (SQLite) + the Postgres probe.
 
 **Not done / limits (honest list):** no streaming tick feed (Yahoo polling with
 failover, not an exchange-licensed tape; Finnhub websocket not wired); no paid data

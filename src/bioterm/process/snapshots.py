@@ -91,14 +91,18 @@ def run(asof: date | None = None) -> dict:
     # membership - when it changes, or weekly
     u = read_sql("SELECT ticker, in_xbi, in_ibb, tier FROM securities "
                  "WHERE tier IS NULL OR tier IN ('core', 'extended')")
-    rows = [{"asof": asof, "ticker": r["ticker"], "in_xbi": int(r["in_xbi"] or 0),
-             "in_ibb": int(r["in_ibb"] or 0), "tier": r["tier"] or "core"}
+    def _num(v) -> int:
+        return int(v) if v is not None and v == v else 0
+
+    rows = [{"asof": asof, "ticker": r["ticker"], "in_xbi": _num(r["in_xbi"]),
+             "in_ibb": _num(r["in_ibb"]),
+             "tier": r["tier"] if isinstance(r["tier"], str) and r["tier"] else "core"}
             for r in (u.to_dict("records") if not u.empty else [])]
     last = read_sql("SELECT asof, ticker, in_xbi, tier FROM universe_snapshots WHERE asof = "
                     "(SELECT MAX(asof) FROM universe_snapshots)")
     same = False
     if not last.empty:
-        prev = {(t, int(x or 0), str(tr)) for t, x, tr in
+        prev = {(t, _num(x), str(tr)) for t, x, tr in
                 zip(last["ticker"], last["in_xbi"], last["tier"])}
         now = {(r["ticker"], r["in_xbi"], r["tier"]) for r in rows}
         age = (asof - _day(last["asof"].iloc[0])).days if _day(last["asof"].iloc[0]) else 99

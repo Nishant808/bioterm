@@ -73,7 +73,8 @@ if int(meta.get("in_xbi") or 0) == 1:
     badges.append("<span class='bt-badge'>XBI member</span>")
 if rq_ok and rq < 4:
     badges.append("<span class='bt-badge red'>Short cash runway</span>")
-TIER = str(meta.get("tier") or "core")
+_tier = meta.get("tier")
+TIER = _tier if isinstance(_tier, str) and _tier else "core"      # NULL / NaN = core
 if TIER != "core":
     badges.append("<span class='bt-badge'>Extended coverage</span>" if TIER == "extended"
                   else "<span class='bt-badge'>No longer covered</span>")
