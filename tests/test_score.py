@@ -1,7 +1,6 @@
 from datetime import date, datetime, timezone
 
-from bioterm.db import (bulk_upsert, catalysts, fundamentals, init_db, news,
-                        read_sql, scores, securities, technicals)
+from bioterm.db import (bulk_upsert, catalysts, fundamentals, init_db, read_sql, securities, technicals)
 from bioterm.process import score
 
 

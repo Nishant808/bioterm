@@ -111,7 +111,7 @@ def test_catalyst_run_end_to_end(monkeypatch):
 
     init_db()
     today = date.today()
-    near = today.replace(day=15)
+    today.replace(day=15)
     bulk_upsert(clinical_trials, [
         {
             "nct_id": "NCT99999999", "ticker": "AAAA", "sponsor": "Aaaa Inc",

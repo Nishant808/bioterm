@@ -11,7 +11,13 @@ def _isolated_db(tmp_path, monkeypatch):
     import bioterm.db as db_mod
     import bioterm.store as store_mod
 
+    import bioterm.vault as vault_mod
+
     db_mod._ENGINE = None
+    vault_mod.reset_key_cache()
+    for k in ("BIOTERM_ADMIN_PASSWORD", "BIOTERM_SECRET_KEY"):
+        monkeypatch.delenv(k, raising=False)
     monkeypatch.setattr(store_mod, "seed_from_yaml", lambda *a, **k: {})
     yield
     db_mod._ENGINE = None
+    vault_mod.reset_key_cache()

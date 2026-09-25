@@ -1,0 +1,29 @@
+# Tests + lint on every push to main and every pull request. SQLite, no secrets,
+# no network (the dashboard's live-price layer is forced offline in conftest).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --extra dev
+      - name: Lint (correctness rules)
+        run: uv run ruff check src dashboard tests
+      - name: Tests
+        run: uv run pytest -q

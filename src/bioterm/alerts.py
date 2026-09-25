@@ -4,23 +4,25 @@ Rules live in the DB (``app_meta.alert_rules``, editable from the dashboard).
 ``evaluate()`` is pure and shared by the dashboard's Alerts page and the
 ``bioterm alerts`` CLI (run as a step in the ingest-fast workflow).
 
-Delivery is opt-in and credential-gated:
-  * Telegram - set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID  (BotFather, 2 min, free)
-  * anything else - read ``alerts_fired`` yourself
+Delivery goes through ``notify`` (Telegram, Slack, Discord, ntfy phone push,
+email) - credentials from the Settings page vault or the environment, routing
+and snoozes from the Alerts page. Every alert is also kept in ``alerts_fired``.
+
+Sources beyond the built-in rules (halts, filings, trial changes, read-through,
+screens, PDUFA dates, movers) register themselves in ``EXTRA_SOURCES``; each is
+fail-soft so one broken source never silences the rest.
 """
 from __future__ import annotations
 
 import hashlib
-import html
 import logging
-import os
 from datetime import datetime, timezone
+from typing import Callable
 
 import pandas as pd
 from sqlalchemy import select
 
 from .db import alerts_fired, bulk_upsert, read_sql, score_snapshots, signal_scores
-from .httpx_util import session
 from .store import get_meta, get_watchlist
 from .util import strip_markup
 
@@ -39,6 +41,18 @@ DEFAULT_RULES = {
 }
 
 SIGNAL_RANK = {"STRONG SELL": -2, "SELL": -1, "NEUTRAL": 0, "BUY": 1, "STRONG BUY": 2}
+
+
+# (name, fn(rules) -> [alert dicts]) - modules append to this on import
+EXTRA_SOURCES: list[tuple[str, Callable[[dict], list[dict]]]] = []
+
+
+def register(name: str):
+    def deco(fn):
+        if not any(n == name for n, _ in EXTRA_SOURCES):
+            EXTRA_SOURCES.append((name, fn))
+        return fn
+    return deco
 
 
 def get_rules() -> dict:
@@ -117,6 +131,15 @@ def evaluate(rules: dict | None = None) -> list[dict]:
     # --- signal-engine label transitions (latest run vs the previous day's) ---
     out.extend(_signal_transitions(rules, wl if wl_only else None))
 
+    # --- registered sources (halts, filings, trial changes, ...) ---
+    for name, fn in EXTRA_SOURCES:
+        try:
+            items = fn(rules) or []
+        except Exception as exc:  # noqa: BLE001 - a broken source mustn't silence the rest
+            log.warning("alert source %s failed: %s", name, exc)
+            continue
+        out.extend(a for a in items if not wl_only or str(a.get("ticker", "")).upper() in wl)
+
     out.sort(key=lambda a: a["weight"], reverse=True)
     return out
 
@@ -159,26 +182,9 @@ def _signal_transitions(rules: dict, only: set[str] | None) -> list[dict]:
     return out
 
 
-def _telegram(text: str) -> bool:
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat = os.environ.get("TELEGRAM_CHAT_ID")
-    if not token or not chat:
-        return False
-    try:
-        r = session().post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat, "text": text, "parse_mode": "HTML",
-                  "disable_web_page_preview": True},
-            timeout=15)
-        r.raise_for_status()
-        return True
-    except Exception as exc:  # noqa: BLE001
-        log.warning("telegram send failed: %s", exc)
-        return False
-
-
-def run(deliver: bool = True, max_deliver: int = 12) -> dict:
-    """Evaluate rules, persist newly-fired alerts, optionally push them."""
+def run(deliver: bool = True, max_deliver: int = 15) -> dict:
+    """Evaluate rules, persist newly-fired alerts, push them to every configured channel."""
+    _load_sources()
     rules = get_rules()
     fired = evaluate(rules)
     now = datetime.now(timezone.utc)
@@ -191,8 +197,9 @@ def run(deliver: bool = True, max_deliver: int = 12) -> dict:
         aid = _aid(a["kind"], a["ticker"], a.get("key") or a["detail"])
         if aid in known_ids:
             continue
+        known_ids.add(aid)
         row = {"id": aid, "ts": now, "kind": a["kind"], "ticker": a["ticker"],
-               "detail": a["detail"], "weight": round(float(a["weight"]), 4),
+               "detail": a["detail"][:1000], "weight": round(float(a["weight"]), 4),
                "delivered": 0}
         new_rows.append(row)
         fresh.append(a)
@@ -201,18 +208,12 @@ def run(deliver: bool = True, max_deliver: int = 12) -> dict:
         bulk_upsert(alerts_fired, new_rows)
 
     delivered = 0
+    channels: dict[str, int] = {}
     if deliver and fresh:
-        top = fresh[:max_deliver]
-        lines = [f"<b>BioTerm — {len(fresh)} new alert(s)</b>"]
-        for a in top:
-            icon = {"score move": "📈", "catalyst soon": "🗓", "headline": "📰",
-                    "signal": "🚦"}.get(a["kind"], "•")
-            # parse_mode=HTML: a raw "&" or "<" in a title ("R&D") is a hard error
-            lines.append(f"{icon} <b>{html.escape(str(a['ticker']))}</b> — "
-                         f"{html.escape(str(a['detail']))}")
-        if len(fresh) > len(top):
-            lines.append(f"…and {len(fresh) - len(top)} more")
-        if _telegram("\n".join(lines)):
+        from .notify import send_alerts
+
+        channels = send_alerts(fresh, max_lines=max_deliver)
+        if channels:
             delivered = len(fresh)
             ids = [r["id"] for r in new_rows]
             from .db import get_engine
@@ -221,5 +222,22 @@ def run(deliver: bool = True, max_deliver: int = 12) -> dict:
                              .where(alerts_fired.c.id.in_(ids))
                              .values(delivered=1))
 
-    log.info("alerts: %d firing, %d new, %d delivered", len(fired), len(new_rows), delivered)
-    return {"firing": len(fired), "new": len(new_rows), "delivered": delivered}
+    log.info("alerts: %d firing, %d new, delivered via %s", len(fired), len(new_rows),
+             channels or "no channel")
+    return {"firing": len(fired), "new": len(new_rows), "delivered": delivered,
+            "channels": channels}
+
+
+def _load_sources() -> None:
+    """Import the modules that register alert sources (kept lazy - some import
+    heavier dependencies than the alert engine itself needs)."""
+    import importlib
+
+    for mod in ("bioterm.realtime", "bioterm.process.trial_changes",
+                "bioterm.process.landscape", "bioterm.screener", "bioterm.ingest.pdufa"):
+        try:
+            importlib.import_module(mod)
+        except ModuleNotFoundError:
+            continue
+        except Exception as exc:  # noqa: BLE001
+            log.warning("alert source module %s failed to load: %s", mod, exc)

@@ -58,7 +58,6 @@ def test_net_open_market_rollup():
 def test_insider_buying_lifts_score():
     from datetime import date as _d
 
-    from bioterm import store
     from bioterm.db import bulk_upsert, fundamentals, securities, technicals
     from bioterm.process import score
 

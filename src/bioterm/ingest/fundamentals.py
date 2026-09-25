@@ -65,7 +65,7 @@ def _runway(cash: float | None, burn_ttm: float | None) -> float | None:
 
 
 def run(tickers: list[str] | None = None) -> dict:
-    cfg = load_settings()
+    load_settings()
     tickers = tickers or universe_tickers()
     cmap = edgar.ticker_cik_map()
     now = datetime.now(timezone.utc)

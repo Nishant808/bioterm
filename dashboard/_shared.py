@@ -24,7 +24,6 @@ try:
 except Exception:  # noqa: BLE001 - no secrets file locally is fine
     pass
 
-from bioterm.config import load_settings  # noqa: E402
 from bioterm.db import init_db, read_sql  # noqa: E402
 
 # Make sure tables exist (harmless if they already do) - covers a fresh cloud DB

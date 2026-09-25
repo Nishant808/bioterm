@@ -1,7 +1,6 @@
 """Offline smoke tests - no network. External calls are monkeypatched."""
-from datetime import datetime, timezone
 
-from bioterm.db import bulk_upsert, init_db, read_sql, securities
+from bioterm.db import bulk_upsert, init_db, securities
 
 
 def test_universe_falls_back_to_seed(monkeypatch):

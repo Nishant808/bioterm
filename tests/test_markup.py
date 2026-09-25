@@ -48,7 +48,7 @@ def test_alert_details_are_plain_text(monkeypatch):
 
 
 def test_telegram_message_is_html_escaped(monkeypatch):
-    from bioterm import alerts
+    from bioterm import alerts, notify
 
     sent = {}
 
@@ -57,13 +57,13 @@ def test_telegram_message_is_html_escaped(monkeypatch):
             return None
 
     class _Session:
-        def post(self, url, json, timeout):
-            sent.update(json)
+        def post(self, url, json=None, timeout=None, **kw):
+            sent.update(json or {})
             return _Resp()
 
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "c")
-    monkeypatch.setattr(alerts, "session", lambda: _Session())
+    monkeypatch.setattr(notify, "session", lambda: _Session())
     monkeypatch.setattr(alerts, "evaluate", lambda rules=None: [
         {"kind": "headline", "ticker": "ABC", "detail": "R&D day <10% dilution", "weight": 1.0}])
     from bioterm.db import init_db

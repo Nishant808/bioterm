@@ -1,6 +1,6 @@
 """Per-molecule tracking: parsing watchlist labels, cross-sponsor trial search,
 alias discovery, literature, derived links and the catalysts it feeds."""
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from bioterm import store
 from bioterm.db import bulk_upsert, init_db, news, read_sql, securities

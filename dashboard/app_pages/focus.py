@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from _shared import prev_scores_df, scores_df, sentiment_df, signal_board
-from _ui import (ACCENT, CATALYST_TYPES, FAMILIES, NEG, POS, TEXT_2, card, catalyst_family,
+from _ui import (ACCENT, CATALYST_TYPES, FAMILIES, NEG, TEXT_2, card, catalyst_family,
                  catalyst_label, catalyst_title, chart, display_name, empty_state, kpi_row,
                  kv_list, page_header, plotly_layout, tone_of)
 from bioterm import store
