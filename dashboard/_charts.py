@@ -12,7 +12,7 @@ import json
 import math
 
 import pandas as pd
-import streamlit.components.v1 as components
+import streamlit as st
 
 from _ui import (ACCENT, BG, BORDER, GRID, MUTED, NEG, POS, SMA_COLORS, TEXT_2, VIOLET, WARN)
 
@@ -35,6 +35,11 @@ def _f(x):
     except (TypeError, ValueError):
         return None
     return None if math.isnan(x) or math.isinf(x) else round(x, 4)
+
+
+def _js(obj) -> str:
+    """JSON for inside a <script> tag - a "</" in any string can't close the tag."""
+    return json.dumps(obj, separators=(",", ":")).replace("</", "<\\/")
 
 
 def payload(df: pd.DataFrame, *, intraday: bool = False, markers: list[dict] | None = None,
@@ -80,8 +85,8 @@ def pro_chart(df: pd.DataFrame, *, intraday: bool = False, markers: list[dict] |
 <div id="legend" style="position:absolute;left:10px;top:6px;z-index:3;font:12px Inter,
 system-ui,sans-serif;color:{TEXT_2};pointer-events:none"></div>
 <script>
-const D = {json.dumps(data, separators=(",", ":"))};
-const C = {json.dumps(colors)};
+const D = {_js(data)};
+const C = {_js(colors)};
 function draw() {{
   const L = window.LightweightCharts;
   const el = document.getElementById('c');
@@ -137,7 +142,13 @@ load(root + '{LIB_LOCAL}', () => load('{LIB_CDN}', () => {{
   document.getElementById('legend').textContent = 'Chart library unavailable';
 }}));
 </script>"""
-    components.html(f"<body style='margin:0;background:{BG}'>{html}</body>", height=height)
+    page = f"<body style='margin:0;background:{BG}'>{html}</body>"
+    if hasattr(st, "iframe"):            # Streamlit >= 1.60; components.html is deprecated
+        st.iframe(page, height=height)
+    else:  # pragma: no cover - older Streamlit
+        import streamlit.components.v1 as components
+
+        components.html(page, height=height)
 
 
 def signal_markers(signals: pd.DataFrame, catalysts: pd.DataFrame | None = None) -> list[dict]:

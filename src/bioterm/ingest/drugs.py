@@ -94,14 +94,75 @@ def _applicant_matcher():
     return lambda n: match_issuer(n, exact, core)
 
 
-def run_orange_book() -> dict[str, Any]:
-    from ..db import bulk_upsert, loe_calendar, read_sql
+# fda.gov sits behind a bot filter that answers scripted clients with an "apology"
+# HTML page; a plain browser request gets the ZIP
+_BROWSER = {"User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                           "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"),
+            "Accept": ("text/html,application/xhtml+xml,application/xml;q=0.9,"
+                       "application/zip,*/*;q=0.8"),
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.fda.gov/drugs/drug-approvals-and-databases/"
+                       "orange-book-data-files"}
+
+
+def download_orange_book() -> bytes:
     from ..httpx_util import get_bytes
 
-    raw = get_bytes(ORANGE_BOOK, headers={"User-Agent": "Mozilla/5.0 (BioTerm)"},
-                    min_interval=1.0, retries=2, timeout=120)
-    products, patents, excl = parse_orange_book(raw)
-    rows = loe_rows(products, patents, excl, _applicant_matcher())
+    raw = get_bytes(ORANGE_BOOK, headers=_BROWSER, min_interval=1.0, retries=2, timeout=120)
+    if raw[:2] != b"PK":
+        raise ValueError("fda.gov returned a web page instead of the Orange Book ZIP "
+                         "(bot filter)")
+    return raw
+
+
+def approvals_rows(since_years: int = 15) -> list[dict[str, Any]]:
+    """Fallback when the Orange Book is unreachable: the universe's NDA approvals from
+    openFDA (already in ``fda_events``) as marketed products without patent dates -
+    enough for the drug list and FAERS, with LOE left unknown."""
+    from ..db import read_sql
+
+    df = read_sql("SELECT ticker, application_number, brand_name, generic_name, "
+                  "sponsor_name, MIN(event_date) AS approved FROM fda_events WHERE "
+                  "kind = 'approval' AND application_number LIKE 'NDA%' AND event_date >= :s "
+                  "GROUP BY ticker, application_number, brand_name, generic_name, "
+                  "sponsor_name", {"s": (date.today() - timedelta(days=365 * since_years))
+                                   .isoformat()})
+    now = datetime.now(timezone.utc)
+    out = []
+    for r in df.itertuples():
+        appr = pd.to_datetime(r.approved, errors="coerce")
+        if pd.isna(appr) or not r.brand_name:
+            continue
+        out.append({"id": f"NDA|{r.application_number}"[:64], "ticker": r.ticker,
+                    "applicant": str(r.sponsor_name or "")[:200] or None,
+                    "trade_name": str(r.brand_name)[:200],
+                    "ingredient": str(r.generic_name or "")[:300],
+                    "appl_no": str(r.application_number)[:16], "approval_date": appr.date(),
+                    "patent_expiry": None, "exclusivity_expiry": None, "loe_date": None,
+                    "fetched_at": now})
+    return out
+
+
+def run_orange_book() -> dict[str, Any]:
+    from ..db import bulk_upsert, loe_calendar, read_sql
+
+    source = "orange_book"
+    try:
+        products, patents, excl = parse_orange_book(download_orange_book())
+        rows = loe_rows(products, patents, excl, _applicant_matcher())
+        from sqlalchemy import text
+
+        from ..db import get_engine
+
+        with get_engine().begin() as conn:      # the real file supersedes the fallback
+            conn.execute(text("DELETE FROM loe_calendar WHERE id LIKE 'NDA|%'"))
+    except Exception as exc:  # noqa: BLE001 - blocked / moved: keep the drug list alive
+        log.warning("Orange Book unavailable (%s) - openFDA approvals without LOE dates",
+                    exc)
+        products, source = pd.DataFrame(), f"openfda-fallback ({str(exc)[:80]})"
+        have = set(read_sql("SELECT id FROM loe_calendar")["id"])
+        # never overwrite real Orange Book rows with the date-less fallback
+        rows = [r for r in approvals_rows() if r["id"] not in have]
     # biologics: approval + 12 years of reference-product exclusivity (estimate)
     bla = read_sql("SELECT ticker, application_number, brand_name, generic_name, "
                    "MIN(event_date) AS approved FROM fda_events WHERE kind = 'approval' "
@@ -120,7 +181,7 @@ def run_orange_book() -> dict[str, Any]:
                      "exclusivity_expiry": (appr + pd.DateOffset(years=12)).date(),
                      "loe_date": (appr + pd.DateOffset(years=12)).date(), "fetched_at": now})
     n = bulk_upsert(loe_calendar, rows) if rows else 0
-    return {"rows": n, "products": int(len(products))}
+    return {"rows": n, "products": int(len(products)), "source": source}
 
 
 def faers_quarters(payload: dict) -> dict[str, int]:

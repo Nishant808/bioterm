@@ -197,6 +197,40 @@ def test_orange_book_loe_and_faers():
     assert q == {"2026Q1": 5, "2026Q2": 7}
 
 
+def test_orange_book_blocked_falls_back_to_openfda_approvals(db, monkeypatch):
+    from bioterm.db import bulk_upsert, fda_events, read_sql
+    from bioterm.ingest import drugs
+
+    bulk_upsert(fda_events, [
+        {"id": "e1", "ticker": "AAAA", "kind": "approval", "application_number": "NDA212345",
+         "brand_name": "AAAAVIX", "generic_name": "aaaanib", "sponsor_name": "AAAA BIO",
+         "event_date": date(2021, 3, 1)},
+        {"id": "e2", "ticker": "AAAA", "kind": "approval", "application_number": "NDA212345",
+         "brand_name": "AAAAVIX", "generic_name": "aaaanib", "sponsor_name": "AAAA BIO",
+         "event_date": date(2023, 5, 1)}])
+
+    def blocked():
+        raise ValueError("fda.gov returned a web page instead of the Orange Book ZIP")
+
+    monkeypatch.setattr(drugs, "download_orange_book", blocked)
+    out = drugs.run_orange_book()
+    assert out["rows"] == 1 and out["source"].startswith("openfda-fallback")
+    r = read_sql("SELECT * FROM loe_calendar").iloc[0]
+    assert r["trade_name"] == "AAAAVIX" and str(r["approval_date"])[:10] == "2021-03-01"
+    assert r["loe_date"] is None or pd.isna(r["loe_date"])
+
+
+def test_orange_book_download_refuses_the_bot_filter_page(monkeypatch):
+    from bioterm.ingest import drugs
+
+    monkeypatch.setattr("bioterm.httpx_util.get_bytes",
+                        lambda *a, **k: b"<!DOCTYPE html><title>Apology</title>")
+    with pytest.raises(ValueError, match="bot filter"):
+        drugs.download_orange_book()
+    monkeypatch.setattr("bioterm.httpx_util.get_bytes", lambda *a, **k: b"PK\x03\x04zip")
+    assert drugs.download_orange_book().startswith(b"PK")
+
+
 # ---------------------------------------------------------------- gov + etf
 def test_usaspending_rows_keep_only_the_company():
     from bioterm.ingest import gov

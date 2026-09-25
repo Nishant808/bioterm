@@ -252,8 +252,9 @@ def footer() -> None:
         "<div class='bt-footer'>"
         "<span><b>BioTerm</b> · biotech intelligence terminal</span>"
         "<span>Monitoring and screening only — not investment advice. "
-        "Data: yfinance · SEC EDGAR (filings, Form 4, 13F) · ClinicalTrials.gov · "
-        "openFDA · FINRA short volume · Europe PMC · OpenFIGI · RSS</span>"
+        "Data: Yahoo Finance · SEC EDGAR · ClinicalTrials.gov · openFDA · FDA Orange Book · "
+        "Federal Register · Nasdaq Trader · FINRA · USAspending · SSGA · Europe PMC · "
+        "OpenFIGI · company press releases</span>"
         "</div>")
 
 

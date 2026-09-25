@@ -864,6 +864,18 @@ with tab_bs:
                                f"{int(r0['exited_holders'] or 0)} exited)" if pd.notna(hp)
                                else ""))
                 top = pd.DataFrame(json.loads(r0["top_holders"] or "[]"))
+                if "change" in top:
+                    # "new" for a position opened this quarter, else the share change -
+                    # one text column (Arrow can't hold a mixed number/text column)
+                    def _chg(v) -> str:
+                        if isinstance(v, str):
+                            return v
+                        try:
+                            return f"{float(v):+,.0f}" if v == v else ""
+                        except (TypeError, ValueError):
+                            return ""
+
+                    top["change"] = top["change"].map(_chg)
                 if not top.empty:
                     st.dataframe(top, hide_index=True, width="stretch", column_config={
                         "name": "Holder", "shares": st.column_config.NumberColumn(
