@@ -25,7 +25,9 @@ if scores.empty:
 names = dict(zip(scores["ticker"], scores["name"].map(display_name)))
 opts = scores["ticker"].tolist()
 with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-    picks = st.multiselect("Names to compare", opts, default=list(scores.head(3)["ticker"]),
+    _asked = [t for t in st.query_params.get("tickers", "").split(",") if t in set(opts)][:4]
+    picks = st.multiselect("Names to compare", opts,
+                           default=_asked if len(_asked) >= 2 else list(scores.head(3)["ticker"]),
                            max_selections=4, format_func=lambda t: f"{t} · {names.get(t, '')}",
                            width=640)
     win = st.segmented_control("Window", ["3M", "6M", "1Y", "2Y"], default="6M",

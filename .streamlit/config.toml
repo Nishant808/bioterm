@@ -67,3 +67,6 @@ gatherUsageStats = false
 
 [server]
 headless = true
+# dashboard/static/ is served at <app>/app/static/ - the vendored TradingView
+# Lightweight Charts build lives there (dashboard/_charts.py)
+enableStaticServing = true

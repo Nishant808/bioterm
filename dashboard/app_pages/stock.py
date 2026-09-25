@@ -73,9 +73,21 @@ if int(meta.get("in_xbi") or 0) == 1:
     badges.append("<span class='bt-badge'>XBI member</span>")
 if rq_ok and rq < 4:
     badges.append("<span class='bt-badge red'>Short cash runway</span>")
-st.html(f"<div class='bt-hero'><span class='bt-hero-tk'>{esc(ticker)}</span>"
-        f"<span class='bt-hero-name'>{esc(display_name(meta['name']))}</span>"
-        f"{''.join(badges)}</div>")
+with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+    st.html(f"<div class='bt-hero'><span class='bt-hero-tk'>{esc(ticker)}</span>"
+            f"<span class='bt-hero-name'>{esc(display_name(meta['name']))}</span>"
+            f"{''.join(badges)}</div>")
+    st.space("stretch")
+    from bioterm import tearsheet as _ts
+
+    st.download_button("Tear sheet", lambda: _ts.html_page(ticker),
+                       f"{ticker}_tearsheet.html", "text/html", icon=":material/description:",
+                       type="tertiary", help="Printable one-page summary (print to PDF)",
+                       key="ts_html")
+    st.download_button("Excel", lambda: _ts.xlsx(ticker), f"{ticker}_bioterm.xlsx",
+                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                       icon=":material/table_view:", type="tertiary", key="ts_xlsx",
+                       help="Every section as its own sheet")
 
 # ------------------------------------------------------------------ KPIs
 hist = score_history(ticker)
@@ -160,13 +172,15 @@ with notes_col:
                 st.toast("Note saved", icon=":material/check_circle:")
 
 # ------------------------------------------------------------------ tabs
+_TABS = [":material/swap_vert: Signals", ":material/candlestick_chart: Price & technicals",
+         ":material/biotech: Pipeline", ":material/event: Catalysts",
+         ":material/newspaper: News & sentiment", ":material/groups: Insiders",
+         ":material/account_balance: Funds & flow", ":material/savings: Balance sheet",
+         ":material/description: SEC filings"]
 (tab_sig, tab_px, tab_pipe, tab_cat, tab_news, tab_ins, tab_flow, tab_bs,
- tab_fil) = st.tabs([
-    ":material/swap_vert: Signals", ":material/candlestick_chart: Price & technicals",
-    ":material/biotech: Pipeline", ":material/event: Catalysts",
-    ":material/newspaper: News & sentiment", ":material/groups: Insiders",
-    ":material/account_balance: Funds & flow", ":material/savings: Balance sheet",
-    ":material/description: SEC filings"])
+ tab_fil) = st.tabs(_TABS, default=next((t for t in _TABS
+                                          if t.endswith(st.query_params.get("tab", "\0"))),
+                                         None))
 
 # ---- signals
 with tab_sig:
@@ -203,8 +217,15 @@ with tab_sig:
 
 # ---- price
 with tab_px:
-    win = st.segmented_control("Window", ["1D", "5D", "6M", "1Y", "2Y", "5Y"], default="1Y",
-                               required=True, label_visibility="collapsed", key="px_win")
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        win = st.segmented_control("Window", ["1D", "5D", "6M", "1Y", "2Y", "5Y"],
+                                   default="1Y", required=True, label_visibility="collapsed",
+                                   key="px_win")
+        st.space("stretch")
+        style = st.segmented_control("Chart", ["Pro", "Classic"], default="Pro", required=True,
+                                     label_visibility="collapsed", key="px_style",
+                                     help="Pro: TradingView Lightweight Charts - scroll to "
+                                          "zoom, drag to pan. Classic: Plotly")
     intraday = win in ("1D", "5D")
     # always Yahoo, never the ingested table (that only feeds the engines); the
     # daily history also drives the indicator KPIs whatever window is shown
@@ -225,76 +246,90 @@ with tab_px:
         p = pxdf.tail(days) if days else pxdf
         t = tech[tech["date"] >= p["date"].min()] if not intraday else tech.iloc[0:0]
 
-        fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
-                            row_heights=[0.62, 0.16, 0.22], vertical_spacing=0.035)
-        fig.add_trace(go.Candlestick(
-            x=p["date"], open=p["open"], high=p["high"], low=p["low"], close=p["close"],
-            name="Price", showlegend=False,
-            increasing=dict(line=dict(color=POS, width=1), fillcolor=POS),
-            decreasing=dict(line=dict(color=NEG, width=1), fillcolor=NEG)), row=1, col=1)
-        if not t.empty:
-            for col, color in SMA_COLORS.items():
-                if col in t and t[col].notna().any():
-                    fig.add_trace(go.Scatter(
-                        x=t["date"], y=t[col], name=f"SMA {col[3:]}", mode="lines",
-                        line=dict(width=1.5, color=color),
-                        hovertemplate="%{y:.2f}"), row=1, col=1)
-        up = p["close"] >= p["open"]
-        fig.add_trace(go.Bar(
-            x=p["date"], y=p["volume"], name="Volume", showlegend=False,
-            marker=dict(color=["rgba(63,185,107,.38)" if u else "rgba(229,72,77,.38)"
-                               for u in up]),
-            hovertemplate="%{y:,.0f}"), row=2, col=1)
-        if not t.empty and "rsi14" in t:
-            fig.add_hrect(y0=30, y1=70, fillcolor="rgba(255,255,255,.025)", line_width=0,
-                          row=3, col=1)
-            for lvl in (30, 70):
-                fig.add_hline(y=lvl, line=dict(color=BORDER_STRONG, width=1), row=3, col=1)
-            fig.add_trace(go.Scatter(x=t["date"], y=t["rsi14"], name="RSI 14", mode="lines",
-                                     line=dict(color=ACCENT, width=1.5),
-                                     hovertemplate="%{y:.0f}"), row=3, col=1)
+        if style == "Pro":
+            import _charts
 
-        # Catalysts inside the window plus the next 60 days - far-future dates
-        # would stretch the time axis and squeeze the price history (they're all
-        # listed on the Catalysts tab).
-        last_d = p["date"].max()
-        ahead = pd.Timedelta(days=60)
-        cat = catalysts_df()
-        cat = cat[(cat["ticker"] == ticker) & (cat["date"] >= p["date"].min())
-                  & (cat["date"] <= last_d + ahead)] if not intraday else cat.iloc[0:0]
-        x_end = last_d + (ahead if (cat["date"] > last_d).any() else pd.Timedelta(days=3))
-        if not cat.empty:
-            for d in cat["date"].unique():
-                fig.add_vline(x=d, line=dict(color="rgba(224,163,62,.35)", width=1),
-                              row=1, col=1)
-            top_y = float(p["high"].max()) * 1.035
-            fig.add_trace(go.Scatter(
-                x=cat["date"], y=[top_y] * len(cat), mode="markers", name="Catalyst",
-                marker=dict(symbol="triangle-down", size=10, color=WARN,
-                            line=dict(color="#0B0E14", width=1.5)),
-                customdata=list(zip(cat["type"].map(catalyst_label),
-                                    cat["title"].map(lambda s: catalyst_title(s)[:90]))),
-                hovertemplate="<b>%{customdata[0]}</b><br>%{x|%b %d, %Y}<br>"
-                              "%{customdata[1]}<extra></extra>"), row=1, col=1)
+            pro = p.merge(t[["date", "sma20", "sma50", "sma200", "rsi14"]], on="date",
+                          how="left") if not t.empty else p
+            _cat = catalysts_df()
+            _cat = _cat[(_cat["ticker"] == ticker) & (_cat["date"] >= p["date"].min())] \
+                if not intraday else _cat.iloc[0:0]
+            marks = [] if intraday else _charts.signal_markers(
+                signal_history(ticker),
+                _cat[_cat["date"] <= p["date"].max()])
+            _charts.pro_chart(pro, intraday=intraday, markers=marks, height=560,
+                              show_rsi=not intraday)
+        else:
+            fig = make_subplots(rows=3, cols=1, shared_xaxes=True,
+                                row_heights=[0.62, 0.16, 0.22], vertical_spacing=0.035)
+            fig.add_trace(go.Candlestick(
+                x=p["date"], open=p["open"], high=p["high"], low=p["low"], close=p["close"],
+                name="Price", showlegend=False,
+                increasing=dict(line=dict(color=POS, width=1), fillcolor=POS),
+                decreasing=dict(line=dict(color=NEG, width=1), fillcolor=NEG)), row=1, col=1)
+            if not t.empty:
+                for col, color in SMA_COLORS.items():
+                    if col in t and t[col].notna().any():
+                        fig.add_trace(go.Scatter(
+                            x=t["date"], y=t[col], name=f"SMA {col[3:]}", mode="lines",
+                            line=dict(width=1.5, color=color),
+                            hovertemplate="%{y:.2f}"), row=1, col=1)
+            up = p["close"] >= p["open"]
+            fig.add_trace(go.Bar(
+                x=p["date"], y=p["volume"], name="Volume", showlegend=False,
+                marker=dict(color=["rgba(63,185,107,.38)" if u else "rgba(229,72,77,.38)"
+                                   for u in up]),
+                hovertemplate="%{y:,.0f}"), row=2, col=1)
+            if not t.empty and "rsi14" in t:
+                fig.add_hrect(y0=30, y1=70, fillcolor="rgba(255,255,255,.025)", line_width=0,
+                              row=3, col=1)
+                for lvl in (30, 70):
+                    fig.add_hline(y=lvl, line=dict(color=BORDER_STRONG, width=1), row=3, col=1)
+                fig.add_trace(go.Scatter(x=t["date"], y=t["rsi14"], name="RSI 14", mode="lines",
+                                         line=dict(color=ACCENT, width=1.5),
+                                         hovertemplate="%{y:.0f}"), row=3, col=1)
 
-        fig.update_layout(**plotly_layout(
-            height=560, hovermode="x unified", xaxis_rangeslider_visible=False,
-            legend=dict(orientation="h", yanchor="bottom", y=1.01, x=0,
-                        bgcolor="rgba(0,0,0,0)", font=dict(size=11))))
-        breaks = [dict(bounds=["sat", "mon"])]
-        if intraday:
-            breaks.append(dict(bounds=[16, 9.5], pattern="hour"))   # overnight gaps
-        fig.update_xaxes(range=[p["date"].min(), x_end if not intraday else p["date"].max()],
-                         rangebreaks=breaks, showgrid=False,
-                         showspikes=True, spikemode="across", spikesnap="cursor",
-                         spikecolor=BORDER_STRONG, spikethickness=1, spikedash="solid")
-        fig.update_yaxes(gridcolor=GRID, zeroline=False)
-        fig.update_yaxes(title_text="Price", title_font=dict(size=11, color=MUTED), row=1, col=1)
-        fig.update_yaxes(title_text="Volume", title_font=dict(size=11, color=MUTED),
-                         showticklabels=False, row=2, col=1)
-        fig.update_yaxes(title_text="RSI", title_font=dict(size=11, color=MUTED),
-                         range=[0, 100], tickvals=[30, 70], row=3, col=1)
-        chart(fig, key="price")
+            # Catalysts inside the window plus the next 60 days - far-future dates
+            # would stretch the time axis and squeeze the price history (they're all
+            # listed on the Catalysts tab).
+            last_d = p["date"].max()
+            ahead = pd.Timedelta(days=60)
+            cat = catalysts_df()
+            cat = cat[(cat["ticker"] == ticker) & (cat["date"] >= p["date"].min())
+                      & (cat["date"] <= last_d + ahead)] if not intraday else cat.iloc[0:0]
+            x_end = last_d + (ahead if (cat["date"] > last_d).any() else pd.Timedelta(days=3))
+            if not cat.empty:
+                for d in cat["date"].unique():
+                    fig.add_vline(x=d, line=dict(color="rgba(224,163,62,.35)", width=1),
+                                  row=1, col=1)
+                top_y = float(p["high"].max()) * 1.035
+                fig.add_trace(go.Scatter(
+                    x=cat["date"], y=[top_y] * len(cat), mode="markers", name="Catalyst",
+                    marker=dict(symbol="triangle-down", size=10, color=WARN,
+                                line=dict(color="#0B0E14", width=1.5)),
+                    customdata=list(zip(cat["type"].map(catalyst_label),
+                                        cat["title"].map(lambda s: catalyst_title(s)[:90]))),
+                    hovertemplate="<b>%{customdata[0]}</b><br>%{x|%b %d, %Y}<br>"
+                                  "%{customdata[1]}<extra></extra>"), row=1, col=1)
+
+            fig.update_layout(**plotly_layout(
+                height=560, hovermode="x unified", xaxis_rangeslider_visible=False,
+                legend=dict(orientation="h", yanchor="bottom", y=1.01, x=0,
+                            bgcolor="rgba(0,0,0,0)", font=dict(size=11))))
+            breaks = [dict(bounds=["sat", "mon"])]
+            if intraday:
+                breaks.append(dict(bounds=[16, 9.5], pattern="hour"))   # overnight gaps
+            fig.update_xaxes(range=[p["date"].min(), x_end if not intraday else p["date"].max()],
+                             rangebreaks=breaks, showgrid=False,
+                             showspikes=True, spikemode="across", spikesnap="cursor",
+                             spikecolor=BORDER_STRONG, spikethickness=1, spikedash="solid")
+            fig.update_yaxes(gridcolor=GRID, zeroline=False)
+            fig.update_yaxes(title_text="Price", title_font=dict(size=11, color=MUTED), row=1, col=1)
+            fig.update_yaxes(title_text="Volume", title_font=dict(size=11, color=MUTED),
+                             showticklabels=False, row=2, col=1)
+            fig.update_yaxes(title_text="RSI", title_font=dict(size=11, color=MUTED),
+                             range=[0, 100], tickvals=[30, 70], row=3, col=1)
+            chart(fig, key="price")
 
         if not tech.empty:
             last = tech.iloc[-1]

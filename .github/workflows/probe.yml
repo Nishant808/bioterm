@@ -177,7 +177,7 @@ jobs:
           from streamlit.testing.v1 import AppTest
           pages = ["overview", "signals", "focus", "stock", "smart_money", "molecules",
                    "backtest", "catalysts", "news", "watchlist", "compare", "alerts",
-                   "portfolio", "market", "copilot", "settings", "health", "screener"]
+                   "portfolio", "market", "copilot", "settings", "health", "screener", "workspace"]
           bad = 0
           for page in pages:
               at = AppTest.from_file("dashboard/Home.py", default_timeout=120)

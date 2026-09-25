@@ -53,6 +53,7 @@ _fresh("_shared")  # secrets bridge + src/ on sys.path - must precede bioterm im
 _fresh("_auth")
 _ui = _fresh("_ui")
 _fresh("_live")
+_fresh("_charts")
 _fresh("_worker").ensure_started()
 
 
@@ -85,6 +86,7 @@ nav = st.navigation(
             _page("compare.py", "Compare", "compare_arrows", "Compare"),
         ],
         "Workspace": [
+            _page("workspace.py", "Workspace", "dashboard_customize", "Workspace"),
             _page("watchlist.py", "Watchlist", "bookmark_star", "Watchlist"),
             _page("alerts.py", "Alerts", "notifications_active", "Alerts"),
             _page("portfolio.py", "Paper trading", "account_balance_wallet", "Portfolio"),
@@ -120,6 +122,8 @@ try:
     _tape()
 except Exception as exc:  # noqa: BLE001 - the tape must never break a page
     log.info("ticker tape skipped: %s", exc)
+
+_fresh("_command").render()
 
 try:
     nav.run()
