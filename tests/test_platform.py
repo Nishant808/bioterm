@@ -38,6 +38,38 @@ def test_sic_feed_parses_ciks_and_next_page():
     assert nxt and "start=10" in nxt and "output=atom" in nxt
 
 
+def _feed(ciks, sic="2836", more=True):
+    ents = "".join(f"<entry><content type='text/xml'><company-info><cik>{c:010d}</cik>"
+                   f"<sic>{sic}</sic><state>MA</state></company-info></content></entry>"
+                   for c in ciks)
+    nxt = ("<link href='https://www.sec.gov/cgi-bin/browse-edgar?x=1&amp;start=9' "
+           "rel='next' type='application/atom+xml' />") if more else ""
+    return (f"<?xml version='1.0' encoding='ISO-8859-1' ?><feed "
+            f"xmlns='http://www.w3.org/2005/Atom'>{ents}{nxt}</feed>").encode("latin-1")
+
+
+def test_sic_crawl_retries_then_skips_a_bad_page(monkeypatch):
+    import bioterm.httpx_util as hu
+    from bioterm.ingest import sic_universe as su
+
+    calls = []
+
+    def fake(url, **kw):
+        start = int(url.split("start=")[1].split("&")[0])
+        calls.append(start)
+        if start == 0:
+            return _feed(range(1, 101))
+        if start == 100:
+            raise TimeoutError("read timed out")
+        return _feed(range(201, 251), more=False)
+
+    monkeypatch.setattr(hu, "get_bytes", fake)
+    monkeypatch.setattr(su.time, "sleep", lambda s: None)
+    found, complete = su.crawl(("2836",))
+    assert len(found) == 150 and not complete
+    assert calls == [0, 100, 100, 100, 200]          # 3 tries, then the next page
+
+
 def test_exchange_file_drops_otc_and_keeps_primary_ticker():
     from bioterm.ingest.sic_universe import parse_exchange_file
 

@@ -71,15 +71,18 @@ def ohlc_invalid() -> dict:
 
 
 def price_jumps() -> dict:
-    df = _q("SELECT ticker, date, close FROM prices WHERE date >= :a ORDER BY ticker, date",
-            {"a": _days(45)})
+    df = _q("SELECT p.ticker, p.date, p.close FROM prices p JOIN securities s ON "
+            "s.ticker = p.ticker WHERE p.date >= :a AND " + CORE + " ORDER BY p.ticker, "
+            "p.date", {"a": _days(45)})
     if df.empty:
-        return _res(0, [])
+        return _res(0, [], note="no recent core prices")
     df["ret"] = df.groupby("ticker")["close"].pct_change()
-    bad = df[(df["ret"].abs() > 0.9)]
+    # a 1:5+ reverse split shows as +400%, a forward split as -80%+; real binary moves
+    # rarely reach either
+    bad = df[(df["ret"] > 2.5) | (df["ret"] < -0.9)]
     return _res(len(bad), bad.head(10).astype(str).to_dict("records"), warn_at=1,
-                note="daily moves over 90% - a split the feed hasn't adjusted, or a real "
-                     "binary event")
+                note=f"{len(bad)} core daily moves above +250% or below -90% - usually a "
+                     "split the feed hasn't adjusted")
 
 
 def fundamentals_cover() -> dict:

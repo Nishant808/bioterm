@@ -79,7 +79,9 @@ def refresh_extended(_: list[str] | None = None, per_run: int | None = None) -> 
            # 2 years is enough for the 200-day average and 52-week range, and keeps
            # a few hundred extra names inside Neon's free 512 MB
            "prices": run_job("prices_ext", prices.run, ext, "2y"),
-           "technicals": run_job("technicals_ext", technicals.run, ext)}
+           # the latest rows only - pages read today's technicals for these names (the
+           # stock page charts come from the live feed), so 5 rows instead of 400 a name
+           "technicals": run_job("technicals_ext", technicals.run, ext, 5)}
     sl = extended_slice(n, "fundamentals")
     if sl:
         out["edgar"] = run_job("edgar_ext", edgar.run, sl)

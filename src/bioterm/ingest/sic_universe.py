@@ -27,7 +27,8 @@ log = logging.getLogger("bioterm.ingest.sic_universe")
 
 SICS = ("2834", "2835", "2836", "8731")
 BROWSE = ("https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&SIC={sic}&type="
-          "&dateb=&owner=include&start=0&count=100&output=atom")
+          "&dateb=&owner=include&start={start}&count={count}&output=atom")
+PAGE = 100
 EXCHANGE_URL = "https://www.sec.gov/files/company_tickers_exchange.json"
 _NS = "{http://www.w3.org/2005/Atom}"
 _TICKER_RE = re.compile(r"^[A-Z][A-Z.\-]{0,6}$")
@@ -105,35 +106,50 @@ def listed() -> dict[str, dict[str, str]]:
     return out
 
 
-def crawl(sics: tuple[str, ...] = SICS, max_pages: int = 60,
-          budget_s: float = 300) -> tuple[dict[str, str], bool]:
-    """{cik10: sic} across the SIC codes; ``complete`` is False when the page cap or
-    the wall-clock budget cut a crawl short (then nobody is demoted)."""
-    from ..httpx_util import get_bytes
+def crawl(sics: tuple[str, ...] = SICS, max_pages: int = 60, budget_s: float = 360,
+          attempts: int = 3) -> tuple[dict[str, str], bool]:
+    """{cik10: sic} across the SIC codes; ``complete`` is False when a page could not be
+    read, or the page cap / wall-clock budget cut a crawl short (then nobody is
+    demoted). EDGAR's browse pages are slow and sometimes time out: each page gets
+    ``attempts`` tries, and a page that still fails is skipped, not the rest."""
+    from ..httpx_util import CircuitOpen, get_bytes
 
     found: dict[str, str] = {}
     complete = True
     t0 = time.monotonic()
     for sic in sics:
-        url: str | None = BROWSE.format(sic=sic)
-        pages = 0
-        while url:
-            if pages >= max_pages or time.monotonic() - t0 > budget_s:
+        start = 0
+        for _ in range(max_pages):
+            if time.monotonic() - t0 > budget_s:
                 complete = False
-                log.warning("SIC %s crawl cut short after %d pages", sic, pages)
-                break
-            try:
-                rows, url = parse_feed(get_bytes(url, min_interval=_MIN_INTERVAL,
-                                                 retries=2, timeout=30))
-            except Exception as exc:  # noqa: BLE001
-                log.warning("SIC %s page %d failed: %s", sic, pages, exc)
-                complete = False
-                break
-            pages += 1
+                log.warning("SIC crawl out of time at SIC %s, offset %d", sic, start)
+                return found, False
+            url = BROWSE.format(sic=sic, start=start, count=PAGE)
+            rows = nxt = None
+            for attempt in range(attempts):
+                try:
+                    rows, nxt = parse_feed(get_bytes(url, min_interval=_MIN_INTERVAL,
+                                                     retries=1, timeout=45))
+                    break
+                except CircuitOpen as exc:
+                    log.warning("SIC crawl stopped: %s", exc)
+                    return found, False
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("SIC %s offset %d try %d failed: %s", sic, start,
+                                attempt + 1, exc)
+                    time.sleep(3 * (attempt + 1))
+            if rows is None:
+                complete = False              # skip the page, keep crawling
+                start += PAGE
+                continue
             for r in rows:
                 found.setdefault(r["cik"], r["sic"] or sic)
-            if not rows:
+            if not nxt or len(rows) < PAGE:
                 break
+            start += PAGE
+        else:
+            complete = False
+            log.warning("SIC %s crawl hit the %d-page cap", sic, max_pages)
     return found, complete
 
 
@@ -170,7 +186,7 @@ def plan(found: dict[str, str], listing: dict[str, dict[str, str]],
 
 
 def run(sics: tuple[str, ...] | None = None, max_pages: int = 60,
-        budget_s: float = 300) -> dict:
+        budget_s: float = 360) -> dict:
     from ..config import load_settings
     from ..db import bulk_upsert, read_sql, securities
 

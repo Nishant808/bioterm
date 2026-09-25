@@ -35,6 +35,9 @@ RETENTION: dict[str, tuple[str, int]] = {
     "llm_usage": ("day", 400),
     "trial_changes": ("detected_at", 730),
     "fundamental_snapshots": ("asof", 1100),
+    # every run rewrites the last 400 sessions; older rows are never read (the backtest
+    # works from prices)
+    "technicals": ("date", 600),
 }
 SECRET_TABLES = {"app_secrets"}
 SECRET_META = {"admin_auth", "worker_lease"}
