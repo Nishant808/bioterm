@@ -12,6 +12,38 @@ from _ui import (call_rows, card, catalyst_rows, display_name, empty_state, esc,
 page_header("Overview", "Biotech & pharma intelligence terminal · early signals on a "
                         "6-month swing horizon")
 
+
+def _setup_strip() -> None:
+    """First-run checklist - for the owner (or an unclaimed terminal) only; visitors to a
+    claimed terminal never see it."""
+    import _auth
+
+    steps = []
+    if not _auth.claimed():
+        steps.append(("Claim this terminal - set the owner passcode", "lock",
+                      "Settings → Access"))
+    elif _auth.is_owner_session():
+        try:
+            from bioterm import ai, notify
+
+            if not ai.available():
+                steps.append(("Add an LLM key to switch on the Copilot, AI event extraction, "
+                              "filing summaries and the daily brief", "smart_toy",
+                              "Settings → AI"))
+            if not any(notify.configured().values()):
+                steps.append(("Connect an alert channel (Telegram, Slack, Discord, phone "
+                              "push or email)", "notifications", "Settings → Notifications"))
+        except Exception:  # noqa: BLE001
+            return
+    if not steps:
+        return
+    with st.container(border=True, key="bt-setup"):
+        for text, icon, where in steps:
+            st.page_link("app_pages/settings.py", label=f"{text} · {where}",
+                         icon=f":material/{icon}:")
+
+
+_setup_strip()
 scores = scores_df()
 if scores.empty:
     empty_state("No scores yet",

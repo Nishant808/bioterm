@@ -380,3 +380,19 @@ def test_core_name_with_null_tier_has_no_coverage_badge():
     assert not at.exception
     html = " ".join(h.value or "" for h in at.get("html"))
     assert "No longer covered" not in html and "Extended coverage" not in html
+
+
+def test_overview_setup_strip_only_for_owner_or_unclaimed():
+    from bioterm import auth
+
+    at = _render("overview")
+    assert not at.exception
+    assert any("Claim this terminal" in str(p.label) for p in at.get("page_link"))
+    auth.claim("owner passcode 1")
+    import _auth
+
+    _auth._claimed.clear()
+    at = _render("overview")
+    assert not at.exception
+    assert not any("Claim this terminal" in str(p.label) or "LLM key" in str(p.label)
+                   for p in at.get("page_link"))          # a visitor sees no checklist
