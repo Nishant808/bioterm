@@ -315,6 +315,20 @@ def status() -> None:
             console.print(f"  {tbl.name:18s} [red]{exc}[/red]")
     console.rule("recent runs")
     console.print(pipeline.last_runs(20).to_string(index=False))
+    try:
+        from .maintenance import db_size
+        from .process.dq import latest
+
+        sz = db_size()
+        console.print(f"database: {sz['bytes'] / 1e6:,.1f} MB ({sz['dialect']})")
+        dq_df = latest()
+        if not dq_df.empty:
+            console.print("data quality: " + ", ".join(
+                f"{k} {v}" for k, v in dq_df["status"].value_counts().items()))
+            for r in dq_df[dq_df["status"] != "ok"].itertuples():
+                console.print(f"  {r.status.upper():4s} {r.check}: {str(r.detail)[:160]}")
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"(size / dq unavailable: {exc})")
 
 
 @app.command()

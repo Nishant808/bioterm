@@ -357,3 +357,18 @@ def test_market_whole_sector_scope_and_extended_badge():
     at = _render("stock", ticker="XTND")
     assert not at.exception
     assert any("Extended coverage" in (h.value or "") for h in at.get("html"))
+
+
+def test_unclaimed_hosted_terminal_keeps_keys_and_copilot_owner_only(monkeypatch):
+    from bioterm import auth, vault
+
+    monkeypatch.setattr(auth, "_db_password", lambda: "neon-db-pw")
+    at = _render("settings")
+    assert not at.exception
+    keys = {t.key for t in at.text_input}
+    assert "in_ANTHROPIC_API_KEY" not in keys                   # no key entry for visitors
+    assert not any(b.label == "Generate a new token" for b in at.button)
+    vault.set("ANTHROPIC_API_KEY", "sk-ant-api03-owner-key-1234")
+    at = _render("copilot")
+    assert not at.exception
+    assert not any(t.key == "copilot_q" for t in at.text_input) and not at.chat_input

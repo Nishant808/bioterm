@@ -202,7 +202,8 @@ with tab_brief:
         row = b[b["day"].astype(str) == day].iloc[0]
         with card(f"Daily brief · {day}", icon_name="summarize", meta=str(row["model"] or "")):
             st.markdown(md_safe(str(row["body"] or "")))
-    if CAN and st.button("Write today's brief now", icon=":material/edit_note:"):
+    if _auth.can_admin() and st.button("Write today's brief now",
+                                       icon=":material/edit_note:"):
         from bioterm import ai
         from bioterm.ai import jobs
 

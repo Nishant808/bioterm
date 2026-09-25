@@ -56,10 +56,33 @@ def is_claimed() -> bool:
     return env_override() or bool(_stored())
 
 
-def claim(passcode: str) -> None:
-    """First-run: set the owner passcode. Refuses if one already exists."""
+def _db_password() -> str | None:
+    from sqlalchemy.engine import make_url
+
+    from .config import load_settings
+
+    try:
+        return make_url(load_settings().database_url).password or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def claim_proof_required() -> bool:
+    """A terminal on a password-protected database (the hosted Postgres) can only be
+    claimed by someone who knows that password - otherwise the first visitor to a
+    public URL could make themselves the owner. A local SQLite file needs no proof."""
+    return bool(_db_password())
+
+
+def claim(passcode: str, proof: str | None = None) -> None:
+    """First-run: set the owner passcode. Refuses if one already exists, and on a
+    password-protected database unless ``proof`` is that password."""
     if is_claimed():
         raise PermissionError("this terminal already has an owner passcode")
+    secret = _db_password()
+    if secret and not hmac.compare_digest((proof or "").encode(), secret.encode()):
+        time.sleep(0.6)
+        raise PermissionError("that isn't the database password from DATABASE_URL")
     _validate(passcode)
     from .store import set_meta
 

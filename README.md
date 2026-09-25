@@ -86,7 +86,8 @@ uv run bioterm score && uv run bioterm signals
 uv run bioterm serve                    # open http://localhost:8501
 ```
 
-Open **Settings** in the app to set the owner passcode, paste an LLM API key (tested
+Open **Settings** in the app to set the owner passcode (on a hosted Postgres it asks
+once for the database password as proof of ownership), paste an LLM API key (tested
 before it is saved; delete it any time), and connect alert channels.
 
 A full refresh over the core universe (~175 names) takes about 25 minutes, dominated

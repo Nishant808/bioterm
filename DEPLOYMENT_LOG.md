@@ -5,17 +5,18 @@ A running journal so anyone (you, or a fresh Claude session) can resume instantl
 
 ---
 
-## ✅ DEPLOYED  (session 3)  —  https://bioterm.streamlit.app/
+## ✅ DEPLOYED — https://bioterm.streamlit.app/  (current as of session 11)
 
 | piece | where | status |
 |---|---|---|
-| **Dashboard** | **https://bioterm.streamlit.app/** (Streamlit Community Cloud) | ✅ live — Home / Stock Detail / Alerts / News Firehose / Compare all verified in-browser |
-| **Database** | **Neon Postgres** — project `lingering-leaf-70821008`, pooled endpoint `ep-curly-thunder-b2tm2nhm-pooler.c-6.eu-central-1`, full 161-ticker dataset loaded | ✅ |
-| **Ingestion** | **GitHub Actions**, private repo `Nishant808/bioterm` — `ingest-fast` every 2h (11-23 UTC), `ingest-full` daily 09:00 UTC. ~1650 min/mo (inside the 2000 free) | ✅ `ingest-fast` green (4m17s); `ingest-full` re-run verifying the param fix |
-| **Secrets** | Actions: `DATABASE_URL`, `SEC_UA`. Streamlit: same two. **DB URL is never in the repo.** | ✅ |
+| **Dashboard** | **https://bioterm.streamlit.app/** (Streamlit Community Cloud, `main`, `dashboard/Home.py`) | ✅ 19 pages; claim it once on Settings → Access (Neon DB password + a passcode of your choice) |
+| **Database** | **Neon Postgres** (pooled endpoint; URL only in secrets) — 57 tables | ✅ |
+| **Ingestion** | **GitHub Actions**, private repo `Nishant808/bioterm` — `ingest-full` at the US open (light) + close (full), `ingest-fast` 3×/weekday + 1×/weekend day, `pulse` every 2 h in US hours, `backup` Sundays, `ci`, `probe` | ≈1,650 of 2,000 Actions min/month |
+| **Secrets** | Actions: `DATABASE_URL`, `SEC_UA` (+ optional `BIOTERM_SECRET_KEY`, `TELEGRAM_*`). Streamlit: `DATABASE_URL`, `SEC_UA` (+ optional `BIOTERM_ADMIN_PASSWORD`). LLM / Finnhub / channel keys live encrypted in the DB (Settings page). **DB URL is never in the repo.** | ✅ |
 
 Nothing runs on the Mac. Update the code: `git push` → Streamlit Cloud auto-redeploys
-the dashboard; the next Actions cron picks up pipeline changes.
+the dashboard; the next Actions cron picks up pipeline changes. Newest session notes
+are at the bottom of this file.
 
 ### Two CI-only bugs found & fixed (SQLite never showed them)
 
@@ -779,3 +780,71 @@ on `main` (`hf-finbert-v1`).
   ~800 + ~600 + ~45 ≈ 1,450 Actions min/month.
 - `probe.yml` gained a live-Yahoo check (quotes, daily + intraday history, closes) —
   the sandbox can't reach Yahoo, so this is where the live path is verified.
+
+## 2026-09-25 — session 11: the terminal release (everything on the upgrade list)
+
+Six commits on `main-vcyb9o` (`1537aa5` … `7f9a033`), merged to `main`. What shipped:
+
+**Foundation** — NYSE calendar with holidays / early closes (`market_calendar.py`; every
+workflow gates on it); versioned migrations (`@migration(n)` + `schema_migrations`);
+encrypted secrets vault (`vault.py`, Fernet, key from the DB credentials or
+`BIOTERM_SECRET_KEY`); owner passcode (`auth.py`) — visitors are read-only, the owner
+unlocks from the header chip; claiming the hosted terminal needs the Neon database
+password once (so no visitor can claim the public URL), and keys / channels /
+Copilot are owner-only even before it is claimed; per-host circuit breaker in `httpx_util`; alerts to
+Telegram / Slack / Discord / ntfy phone push / email with per-kind routing and
+snoozes (`notify.py`); `ci.yml` (ruff + tests on main and PRs).
+
+**Settings page** — Access (passcode), AI (Anthropic / OpenAI-compatible keys: test &
+save, save without testing, test saved value, delete; models, daily budget, usage
+chart), Notifications (every channel + test send), Data providers (Finnhub), System
+(status, in-app pulse toggle, API token generator).
+
+**AI** (no-op without a key) — `bioterm.ai`: provider adapter, budget + `llm_usage`
+ledger; Copilot page (tool use over 14 DB/SEC tools, answers cite [n]); headline event
+extraction (toplines, CRLs, PDUFA/AdCom dates → catalysts + 2 detectors); 8-K
+summaries; 10-K risk-factor diffs; daily brief after the close run.
+
+**Real-time** — halts (Nasdaq Trader), EDGAR current-filings Atom matched by CIK,
+GlobeNewswire / PR Newswire wires, movers + "why it moved"; `realtime.pulse()` from
+`pulse.yml`, `bioterm worker` (Docker / launchd) and an in-app thread, one DB lease;
+live quotes Yahoo → Nasdaq → Finnhub; ticker tape; Market page (heatmap, breadth,
+movers, halts, filings; core or whole-sector scope).
+
+**Catalyst intelligence** — PDUFA dates from EDGAR full-text search, AdComs from the
+Federal Register; trial change radar; catalyst outcome DB + base rates; PoS priors
+(BIO/Informa/QLS 2011–2020); implied vs realized moves; competitive landscape +
+read-through alerts; verified industry / CHMP calendar.
+
+**Fundamentals & ownership** — XBRL warrants / options / debt; dilution radar; rNPV +
+SOTP; whole-market 13F from the SEC data sets; 13D/13G; Orange Book LOE; FAERS;
+USAspending; XBI flows + rebalance pressure; Screener (38 fields, presets, saved
+screens with entry alerts).
+
+**Terminal UI** — command bar with mnemonics + search (`/`, Ctrl/Cmd+K); TradingView
+Lightweight Charts (vendored in `dashboard/static/`, CDN fallback) with signal and
+catalyst markers; tear sheets (HTML + Excel); alert centre; Workspace (linked panels /
+monitor, saved layouts); Data health page.
+
+**Platform** — extended tier by SIC code (weekly EDGAR crawl, light coverage);
+point-in-time snapshots; 13 DQ checks (+ "dq" alerts on failure); retention; JSON-lines
+backup / restore + weekly `backup.yml`; backfill CLI; live per-detector record in the
+backtest; read-only FastAPI (`bioterm api`); Docker `pulse` + `api` services.
+
+**Actions budget (private repo, 2,000 min):** ingest-full ≈ 880 (open light ~8 min,
+close full ~30–35 min, two gated-out fires ~1 min) + ingest-fast ≈ 450 (weekdays 3×,
+weekend days 1×) + pulse ≈ 300 (every 2 h, 07:00–20:00 ET) + backup ≈ 16 ≈ **1,650
+min/month**. A public repo or the Docker worker lifts the ceiling.
+
+**Streamlit Cloud:** `requirements.txt` gained `cryptography`, `anthropic`, `Authlib`
+— real dependency lines, so the push does the clean rebuild the new `bioterm.*`
+modules need.
+
+**Tests:** 270 (SQLite) + the Postgres probe.
+
+**Not done / limits (honest list):** no streaming tick feed (Yahoo polling with
+failover, not an exchange-licensed tape; Finnhub websocket not wired); no paid data
+(Level 2, consensus estimates, full historical PDUFA calendars); history before today
+still has survivorship bias (membership snapshots start now; delisted names from
+earlier years aren't recoverable from free sources); the front end is Streamlit, not a
+custom React client; AI features need the owner to paste a key on Settings.

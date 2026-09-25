@@ -146,8 +146,12 @@ rebuild demotes names that left XBI (only when the XBI download itself succeeded
   secret = add it to `vault.CATALOG`; the Settings page's `secret_editor()` gives it
   add / test / delete. Never log or render a value — `mask()` shows the last 4.
 - Writes in the dashboard go through `_auth.can_edit()` / `_auth.guard(what, key)`;
-  read-only visitors see everything but can't change state. Tests unlock via the
-  header form (`unlock_header_code`).
+  read-only visitors see everything but can't change state. The owner-only surface
+  (API keys, channels, API token, Copilot, anything spending LLM budget) uses
+  `_auth.can_admin()` / `guard(..., admin=True)`: an owner session, or an unclaimed
+  *local* DB. Claiming a password-protected DB (the hosted Neon) requires that
+  password as proof (`auth.claim(passcode, proof)`), so a visitor can't claim the
+  public app. Tests unlock via the header form (`unlock_header_code`).
 - LLM calls: `bioterm.ai.complete()` / `run_agent()` only — they pick the provider,
   enforce `daily_budget_usd` (Copilot gets 1.5x headroom) and record `llm_usage`.
   Without a key every AI job is a no-op (`AIUnavailable`), never an error. Prompts

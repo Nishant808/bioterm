@@ -213,3 +213,19 @@ def test_notify_routes_snoozes_and_formats(monkeypatch):
     assert ntfy[3]["Priority"] == "high" and b"BBB" in ntfy[2] and b"MUTE" not in ntfy[2]
     slack = next(p for p in posts if "slack" in p[0])
     assert "📰 AAA — topline" in slack[1]["text"]
+
+
+def test_claiming_a_hosted_database_needs_its_password(monkeypatch):
+    from bioterm import auth
+    from bioterm.db import init_db
+
+    init_db()
+    assert not auth.claim_proof_required()           # local SQLite: no proof
+    monkeypatch.setattr(auth, "_db_password", lambda: "neon-db-pw")
+    assert auth.claim_proof_required()
+    with pytest.raises(PermissionError):
+        auth.claim("a good passcode")
+    with pytest.raises(PermissionError):
+        auth.claim("a good passcode", "wrong")
+    auth.claim("a good passcode", "neon-db-pw")
+    assert auth.is_claimed() and auth.verify("a good passcode")

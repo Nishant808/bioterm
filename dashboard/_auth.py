@@ -10,7 +10,11 @@ Two more ways to be the owner, both optional:
 - Streamlit's built-in OIDC login (``[auth]`` in secrets + Authlib) with the
   signed-in email listed in ``BIOTERM_OWNER_EMAILS``.
 
-An unclaimed terminal (no passcode yet) stays editable and says so.
+An unclaimed terminal (no passcode yet) keeps ordinary research state editable and
+says so, but the owner-only surface - API keys, alert channels, the Copilot and
+anything else that spends the owner's LLM budget - needs ``can_admin()``: an owner
+session, or an unclaimed *local* database. On the hosted database, claiming needs
+the database password (``auth.claim_proof_required``), so a visitor can't claim it.
 """
 from __future__ import annotations
 
@@ -53,6 +57,18 @@ def can_edit() -> bool:
     return bool(st.session_state.get(_KEY)) or _oidc_owner()
 
 
+def can_admin() -> bool:
+    """Keys, channels, Copilot, LLM spend: the owner, or an unclaimed local install."""
+    if is_owner_session():
+        return True
+    if claimed():
+        return False
+    try:
+        return not auth.claim_proof_required()
+    except Exception:  # noqa: BLE001 - fail closed
+        return False
+
+
 def is_owner_session() -> bool:
     """Unlocked with the passcode (or signed in as an owner) - not merely unclaimed."""
     return bool(st.session_state.get(_KEY)) or _oidc_owner()
@@ -75,11 +91,16 @@ def unlock_form(key: str) -> None:
                 st.error("That passcode isn't right.")
 
 
-def guard(what: str = "make changes", key: str = "g") -> bool:
+def guard(what: str = "make changes", key: str = "g", admin: bool = False) -> bool:
     """Put before an edit area. True = editing allowed; otherwise renders a
-    one-line read-only notice with an unlock popover and returns False."""
-    if can_edit():
+    one-line read-only notice with an unlock popover and returns False. ``admin``
+    = the owner-only surface (keys, channels, LLM spend) - see ``can_admin``."""
+    if can_admin() if admin else can_edit():
         return True
+    if not claimed():
+        st.caption(f":material/lock: Set an owner passcode first (Settings → Access) to "
+                   f"{what}.")
+        return False
     with st.container(horizontal=True, vertical_alignment="center", gap="small",
                       key=f"bt-guard-{key}"):
         st.caption(f":material/lock: Read-only - unlock to {what}.")

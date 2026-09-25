@@ -35,11 +35,11 @@ if not ai.available():
     st.page_link("app_pages/settings.py", label="Open Settings", icon=":material/settings:")
     st.stop()
 
-if not _auth.can_edit():
+if not _auth.can_admin():
     empty_state("Copilot is available to the owner",
                 "It runs on the owner's API key. Unlock with the owner passcode to ask "
                 "questions.", "lock")
-    _auth.guard("use the Copilot", key="copilot")
+    _auth.guard("use the Copilot", key="copilot", admin=True)
     st.stop()
 
 hist: list[dict] = st.session_state.setdefault("copilot", [])

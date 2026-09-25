@@ -14,7 +14,8 @@ from bioterm import ai, auth, notify, vault
 page_header("Settings", "Owner access · AI keys and models · alert channels · data providers · "
                         "system")
 
-editable = _auth.can_edit()
+# keys, channels, the API token and the pulse toggle are the owner-only surface
+editable = _auth.can_admin()
 tab_access, tab_ai, tab_notify, tab_data, tab_sys = st.tabs(
     ["Access", "AI", "Notifications", "Data providers", "System"], key="settings_tab")
 
@@ -111,12 +112,18 @@ def secret_editor(name: str, *, test=None, placeholder: str = "", secret: bool =
 with tab_access:
     env_pw = auth.env_override()
     if not _auth.claimed():
+        need_proof = auth.claim_proof_required()
         with card("Set an owner passcode", icon_name="lock"):
-            st.warning("This terminal has no owner yet - anyone with its link can change the "
-                       "watchlist, notes, portfolios, alert rules and API keys. Set a passcode "
-                       "now; afterwards visitors can read everything but change nothing.",
-                       icon=":material/warning:")
+            st.warning("This terminal has no owner yet. Set a passcode now; afterwards "
+                       "visitors can read everything but change nothing."
+                       + (" API keys and alert channels unlock once it is set." if need_proof
+                          else ""), icon=":material/warning:")
             with st.form("claim", border=False):
+                proof = st.text_input(
+                    "Database password", type="password", autocomplete="off",
+                    help="Proves you own this deployment: the password inside your "
+                         "DATABASE_URL (between the ':' after the user name and the '@'). "
+                         "It is only compared, never stored.") if need_proof else None
                 p1 = st.text_input("Passcode (8+ characters)", type="password",
                                    autocomplete="new-password")
                 p2 = st.text_input("Repeat passcode", type="password",
@@ -126,7 +133,7 @@ with tab_access:
                         st.error("The two entries differ.")
                     else:
                         try:
-                            auth.claim(p1)
+                            auth.claim(p1, proof)
                             st.session_state[_auth._KEY] = True
                             st.cache_data.clear()
                             st.toast("Passcode set - this browser session is unlocked",
@@ -183,7 +190,7 @@ with tab_ai:
 
     label("API keys", "encrypted in the database · shown only as the last 4 characters")
     if not editable:
-        _auth.guard("add or delete API keys", key="ai")
+        _auth.guard("add or delete API keys", key="ai", admin=True)
     c1, c2 = st.columns(2)
     with c1:
         secret_editor("ANTHROPIC_API_KEY", placeholder="sk-ant-…",
@@ -267,7 +274,7 @@ with tab_notify:
     st.caption("Alerts go to every configured channel unless the Alerts page routes a kind "
                "elsewhere. Snoozes and routing live on the Alerts page.")
     if not editable:
-        _auth.guard("change alert channels", key="notify")
+        _auth.guard("change alert channels", key="notify", admin=True)
     groups = {
         "ntfy": ("Phone push (ntfy)", ["NTFY_TOPIC", "NTFY_SERVER", "NTFY_TOKEN"]),
         "telegram": ("Telegram", ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]),
@@ -296,7 +303,7 @@ with tab_notify:
 with tab_data:
     st.caption("Optional providers. Without them BioTerm uses free public sources only.")
     if not editable:
-        _auth.guard("change data-provider keys", key="data")
+        _auth.guard("change data-provider keys", key="data", admin=True)
 
     def _finnhub_test(v):
         try:
