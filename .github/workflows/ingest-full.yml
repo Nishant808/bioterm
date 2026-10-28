@@ -21,9 +21,6 @@
 name: ingest-full
 
 on:
-  schedule:
-    - cron: "35 13,14 * * 1-5"   # market open  - 09:35 ET (13:35 UTC in EDT, 14:35 in EST)
-    - cron: "10 20,21 * * 1-5"   # market close - 16:10 ET (20:10 UTC in EDT, 21:10 in EST)
   workflow_dispatch:
     inputs:
       window:
